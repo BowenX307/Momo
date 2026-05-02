@@ -1,0 +1,34 @@
+# 系统
+.DS_Store
+Thumbs.db
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+
+# 依赖
+node_modules/
+.pnpm-store/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 环境变量
+.env
+.env.local
+
+# 构建产物
+dist/
+build/
+.next/
+.expo/
+
+# 日志
+*.log
+logs/
