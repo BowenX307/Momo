@@ -1,10 +1,12 @@
 """FastAPI 应用入口"""
+
 from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.v1 import router as v1_router
 from app.core.config import settings
 
 logger = structlog.get_logger()
@@ -33,6 +35,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+app.include_router(v1_router)
 
 
 @app.get("/")

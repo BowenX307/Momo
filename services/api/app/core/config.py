@@ -1,4 +1,5 @@
 """应用配置 - 通过环境变量加载"""
+
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -20,8 +21,16 @@ class Settings(BaseSettings):
     # Redis（暂未启用）
     redis_url: str = "redis://localhost:6379/0"
 
-    # LLM 供应商（暂未启用，明天接）
+    # LLM 供应商选择：dev 默认走 mock；要接真模型时设为 "deepseek" 并填 key
+    llm_provider: Literal["mock", "deepseek"] = "mock"
+    llm_timeout_seconds: float = 30.0
+
+    # DeepSeek
     deepseek_api_key: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
+    deepseek_model: str = "deepseek-chat"
+
+    # 豆包（备份 provider，暂未接入）
     doubao_api_key: str = ""
 
     # 内容安全（暂未启用）
