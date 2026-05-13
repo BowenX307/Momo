@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import router as v1_router
 from app.core.config import settings
+from app.llm.factory import get_llm_provider
 
 logger = structlog.get_logger()
 
@@ -47,4 +48,10 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "env": settings.env}
+    _, is_mock = get_llm_provider()
+    return {
+        "status": "healthy",
+        "env": settings.env,
+        "llm_provider": settings.llm_provider,
+        "llm_is_mock": is_mock,
+    }

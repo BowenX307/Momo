@@ -1,11 +1,21 @@
 """POST /v1/chat/demo 端到端冒烟测试。
 
-不调真 LLM：默认配置 llm_provider=mock，路由内部走 MockProvider。
+强制走 MockProvider，避免依赖 .env 实际配置 / 真实网络。
+真 provider 的行为由 `tests/test_deepseek_provider.py` 与
+`tests/test_conversation_service.py` 覆盖。
 """
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.main import app
+
+
+@pytest.fixture(autouse=True)
+def _force_mock_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "llm_provider", "mock")
+
 
 client = TestClient(app)
 

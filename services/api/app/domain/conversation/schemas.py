@@ -45,3 +45,7 @@ class ChatDemoResponse(BaseModel):
     safety_flag: SafetyReason
     is_mock: bool
     request_id: str
+    degraded: bool = Field(
+        default=False,
+        description="true 表示原本走真模型但调用失败已降级到 Mock；前端可以加'临时离线'提示",
+    )
