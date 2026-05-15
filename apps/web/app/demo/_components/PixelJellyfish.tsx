@@ -47,20 +47,22 @@ interface Palette {
   tentacleLight: string;
 }
 
+// 蜜桃橘色调，配米白底；不做发光，靠对比与体积感
 const NORMAL_PALETTE: Palette = {
-  head: "#a78bfa", // violet-400
-  headLight: "#c4b5fd", // violet-300
-  eye: "#1f1147",
-  tentacle: "#a78bfa",
-  tentacleLight: "#ddd6fe",
+  head: "#e88c6a", // 蜜桃橘
+  headLight: "#f5c4a0", // 蜜桃高光
+  eye: "#3a2820", // 深暖棕
+  tentacle: "#e88c6a",
+  tentacleLight: "#f8d4b8",
 };
 
+// 降级时退到暖灰棕色调
 const DEGRADED_PALETTE: Palette = {
-  head: "#94a3b8", // slate-400
-  headLight: "#cbd5e1", // slate-300
-  eye: "#1e293b",
-  tentacle: "#94a3b8",
-  tentacleLight: "#e2e8f0",
+  head: "#a89388",
+  headLight: "#cdbfb4",
+  eye: "#2d201a",
+  tentacle: "#a89388",
+  tentacleLight: "#e0d6cd",
 };
 
 function colorFor(ch: string, p: Palette): string | null {
@@ -92,9 +94,6 @@ export function PixelJellyfish({ thinking = false, degraded = false, size = 168 
       ? "momo-breathe 2.4s ease-in-out infinite"
       : "momo-breathe 5s ease-in-out infinite",
     imageRendering: "pixelated",
-    filter: degraded
-      ? "drop-shadow(0 8px 18px rgba(100, 116, 139, 0.18))"
-      : "drop-shadow(0 12px 24px rgba(167, 139, 250, 0.28))",
   };
 
   return (

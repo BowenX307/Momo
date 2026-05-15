@@ -43,7 +43,7 @@ export function StatusHint(props: Props) {
 
   if (variant === "degraded") {
     return (
-      <p className="mt-3 text-center text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+      <p className="mt-3 text-center text-xs leading-relaxed text-stone-500 dark:text-stone-400">
         现在是本地兜底回复，外部模型暂时联系不上。
       </p>
     );

@@ -36,7 +36,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
           // ignore: clipboard 不可用时按钮静默失败，演示场景下基本不会发生
         }
       }}
-      className="rounded border border-zinc-300 bg-white px-2 py-0.5 text-[11px] text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800"
+      className="rounded border border-stone-300 bg-white px-2 py-0.5 text-[11px] text-stone-600 transition-colors hover:bg-stone-50 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-400 dark:hover:bg-stone-800"
     >
       {copied ? "已复制" : label}
     </button>
@@ -46,8 +46,8 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 function ProviderBadge({ health }: { health: HealthResponse | null }) {
   if (!health) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-zinc-500">
-        <span className="h-2 w-2 rounded-full bg-zinc-400" />
+      <span className="inline-flex items-center gap-1.5 text-stone-500">
+        <span className="h-2 w-2 rounded-full bg-stone-400" />
         provider 未知（后端未连上）
       </span>
     );
@@ -56,12 +56,12 @@ function ProviderBadge({ health }: { health: HealthResponse | null }) {
   return (
     <span className="inline-flex items-center gap-1.5">
       <span
-        className={`h-2 w-2 rounded-full ${isReal ? "bg-emerald-500" : "bg-zinc-400"}`}
+        className={`h-2 w-2 rounded-full ${isReal ? "bg-emerald-500" : "bg-stone-400"}`}
       />
-      <span className="text-zinc-700 dark:text-zinc-300">
+      <span className="text-stone-700 dark:text-stone-300">
         provider: <code>{health.llm_provider}</code>
       </span>
-      <span className="text-zinc-500">{isReal ? "（真模型）" : "（mock）"}</span>
+      <span className="text-stone-500">{isReal ? "（真模型）" : "（mock）"}</span>
     </span>
   );
 }
@@ -85,7 +85,7 @@ export function DebugDrawer({ apiBase, health, lastResponse, lastCurl }: Props) 
         type="button"
         aria-label="调试面板"
         onClick={() => setOpen((v) => !v)}
-        className="fixed right-4 bottom-4 z-40 inline-flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-500 shadow-sm transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800"
+        className="fixed right-4 bottom-4 z-40 inline-flex h-9 w-9 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 shadow-sm transition-colors hover:bg-stone-50 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-400 dark:hover:bg-stone-800"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="3" />
@@ -104,37 +104,37 @@ export function DebugDrawer({ apiBase, health, lastResponse, lastCurl }: Props) 
             ref={dialogRef}
             role="dialog"
             aria-label="调试面板"
-            className="fixed right-0 top-0 bottom-0 z-50 flex w-full max-w-sm flex-col gap-4 overflow-y-auto border-l border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-950"
+            className="fixed right-0 top-0 bottom-0 z-50 flex w-full max-w-sm flex-col gap-4 overflow-y-auto border-l border-stone-200 bg-white p-5 shadow-xl dark:border-stone-800 dark:bg-stone-950"
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
+              <h2 className="text-sm font-medium text-stone-700 dark:text-stone-200">
                 调试面板
               </h2>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                className="text-xs text-stone-500 hover:text-stone-800 dark:hover:text-stone-200"
               >
                 关闭
               </button>
             </div>
 
             <section className="space-y-1.5 text-xs">
-              <div className="text-[11px] uppercase tracking-wide text-zinc-400">
+              <div className="text-[11px] uppercase tracking-wide text-stone-400">
                 后端连接
               </div>
               <ProviderBadge health={health} />
-              <div className="text-zinc-500">
-                API base: <code className="text-zinc-700 dark:text-zinc-300">{apiBase}</code>
+              <div className="text-stone-500">
+                API base: <code className="text-stone-700 dark:text-stone-300">{apiBase}</code>
               </div>
-              <div className="text-[11px] text-zinc-400">
+              <div className="text-[11px] text-stone-400">
                 修改地址请编辑 <code>apps/web/.env.local</code> 后重启 dev server。
               </div>
             </section>
 
             <section className="space-y-2 text-xs">
               <div className="flex items-center justify-between">
-                <div className="text-[11px] uppercase tracking-wide text-zinc-400">
+                <div className="text-[11px] uppercase tracking-wide text-stone-400">
                   最近一次响应
                 </div>
                 {lastResponse && (
@@ -145,17 +145,17 @@ export function DebugDrawer({ apiBase, health, lastResponse, lastCurl }: Props) 
                 )}
               </div>
               {lastResponse ? (
-                <pre className="max-h-72 overflow-auto rounded bg-zinc-50 p-2 text-[11px] leading-relaxed text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                <pre className="max-h-72 overflow-auto rounded bg-stone-50 p-2 text-[11px] leading-relaxed text-stone-700 dark:bg-stone-900 dark:text-stone-300">
                   {JSON.stringify(lastResponse, null, 2)}
                 </pre>
               ) : (
-                <p className="text-zinc-400">还没有请求过。</p>
+                <p className="text-stone-400">还没有请求过。</p>
               )}
               {lastResponse && (
-                <div className="flex items-center justify-between text-[11px] text-zinc-500">
+                <div className="flex items-center justify-between text-[11px] text-stone-500">
                   <span>
                     request_id:{" "}
-                    <code className="text-zinc-700 dark:text-zinc-300">
+                    <code className="text-stone-700 dark:text-stone-300">
                       {lastResponse.request_id}
                     </code>
                   </span>
@@ -167,12 +167,12 @@ export function DebugDrawer({ apiBase, health, lastResponse, lastCurl }: Props) 
             {lastCurl && (
               <section className="space-y-2 text-xs">
                 <div className="flex items-center justify-between">
-                  <div className="text-[11px] uppercase tracking-wide text-zinc-400">
+                  <div className="text-[11px] uppercase tracking-wide text-stone-400">
                     等价 curl
                   </div>
                   <CopyButton text={lastCurl} label="复制 curl" />
                 </div>
-                <pre className="overflow-auto rounded bg-zinc-50 p-2 text-[11px] leading-relaxed text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                <pre className="overflow-auto rounded bg-stone-50 p-2 text-[11px] leading-relaxed text-stone-700 dark:bg-stone-900 dark:text-stone-300">
                   {lastCurl}
                 </pre>
               </section>

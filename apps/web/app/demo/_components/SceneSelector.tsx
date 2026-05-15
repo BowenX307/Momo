@@ -44,8 +44,8 @@ export function SceneSelector({ value, onChange, disabled }: Props) {
                 "group flex w-full items-center gap-2.5 rounded-md px-2 py-1 text-left transition-colors",
                 "disabled:cursor-not-allowed disabled:opacity-60",
                 selected
-                  ? "text-violet-700 dark:text-violet-300"
-                  : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-500 dark:hover:text-zinc-200",
+                  ? "text-[#c66645] dark:text-[#f5c4a0]"
+                  : "text-stone-500 hover:text-stone-800 dark:text-stone-500 dark:hover:text-stone-200",
               ].join(" ")}
             >
               <span
@@ -53,8 +53,8 @@ export function SceneSelector({ value, onChange, disabled }: Props) {
                 className={[
                   "h-1.5 w-1.5 shrink-0 rounded-full transition-all",
                   selected
-                    ? "bg-violet-500 ring-2 ring-violet-200 dark:ring-violet-900"
-                    : "bg-zinc-300 group-hover:bg-zinc-500 dark:bg-zinc-700",
+                    ? "bg-[#d97757] ring-2 ring-[#f3d4c3] dark:ring-[#5a3520]"
+                    : "bg-stone-300 group-hover:bg-stone-500 dark:bg-stone-700",
                 ].join(" ")}
               />
               <span>{opt.label}</span>

@@ -103,7 +103,7 @@ export default function DemoPage() {
   const degraded = lastResponse?.degraded ?? false;
 
   return (
-    <div className="relative flex min-h-dvh flex-1 flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+    <div className="relative flex min-h-dvh flex-1 flex-col bg-[#faf6f0] text-stone-900 dark:bg-[#1a1612] dark:text-stone-100">
       <style>{`
         @keyframes momo-fade-in {
           from { opacity: 0; transform: translateY(4px); }
@@ -117,7 +117,7 @@ export default function DemoPage() {
 
       <header className="px-6 pt-6 sm:px-10 sm:pt-10">
         <h1 className="text-lg font-medium tracking-tight">Momo</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">我一直在。</p>
+        <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">我一直在。</p>
       </header>
 
       <main className="flex flex-1 flex-col items-center justify-center gap-8 px-6 pb-10 sm:px-10">
@@ -126,7 +126,7 @@ export default function DemoPage() {
         <div className="flex w-full max-w-md flex-col items-center">
           <p
             key={replyKey}
-            className="min-h-[3em] text-center text-base leading-relaxed text-zinc-800 sm:text-lg dark:text-zinc-100"
+            className="min-h-[3em] text-center text-base leading-relaxed text-stone-800 sm:text-lg dark:text-stone-100"
             style={{ animation: "momo-fade-in 420ms ease-out both" }}
           >
             {loading ? <ThinkingDots /> : reply}
@@ -135,7 +135,7 @@ export default function DemoPage() {
         </div>
 
         <div className="w-full max-w-md">
-          <div className="flex items-end gap-2 rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm focus-within:border-violet-300 focus-within:ring-2 focus-within:ring-violet-100 dark:border-zinc-800 dark:bg-zinc-900 dark:focus-within:border-violet-600 dark:focus-within:ring-violet-950">
+          <div className="flex items-end gap-2 rounded-2xl border border-stone-200 bg-white/70 p-2 focus-within:border-[#e88c6a] focus-within:bg-white dark:border-stone-800 dark:bg-stone-900/60 dark:focus-within:border-[#c66645] dark:focus-within:bg-stone-900">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -143,13 +143,13 @@ export default function DemoPage() {
               placeholder="说点什么…（Enter 发送，Shift+Enter 换行）"
               rows={1}
               disabled={loading}
-              className="flex-1 resize-none bg-transparent px-2 py-1.5 text-base leading-relaxed text-zinc-900 placeholder-zinc-400 outline-none disabled:opacity-60 dark:text-zinc-100 dark:placeholder-zinc-500"
+              className="flex-1 resize-none bg-transparent px-2 py-1.5 text-base leading-relaxed text-stone-900 placeholder-stone-400 outline-none disabled:opacity-60 dark:text-stone-100 dark:placeholder-stone-500"
             />
             <button
               type="button"
               onClick={handleSend}
               disabled={loading || !input.trim()}
-              className="shrink-0 rounded-xl bg-violet-500 px-3.5 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-violet-600 disabled:cursor-not-allowed disabled:bg-zinc-300 dark:disabled:bg-zinc-700"
+              className="shrink-0 rounded-xl bg-[#d97757] px-3.5 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[#c66645] disabled:cursor-not-allowed disabled:bg-stone-300 dark:disabled:bg-stone-700"
             >
               {loading ? "等一下" : "发送"}
             </button>
@@ -173,7 +173,7 @@ export default function DemoPage() {
 
 function ThinkingDots() {
   return (
-    <span className="inline-flex items-end gap-1 text-zinc-400">
+    <span className="inline-flex items-end gap-1 text-stone-400">
       <Dot delay="0s" />
       <Dot delay="0.18s" />
       <Dot delay="0.36s" />
