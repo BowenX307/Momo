@@ -22,9 +22,17 @@ export type SafetyFlag =
   | "input_too_long"
   | "crisis_keyword";
 
+export interface HistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export interface ChatDemoRequest {
   user_text: string;
-  scene: Scene;
+  /** 可选：每个会话第一句留空，让后端自动分类；后续轮把响应里的 scene 传回，
+   * 避免每轮都跑一次分类（多 1 次 LLM 调用）。 */
+  scene?: Scene | null;
+  history?: HistoryMessage[];
 }
 
 export interface ChatDemoResponse {
@@ -105,9 +113,10 @@ export async function fetchHealth(
   }
 }
 
-/** 拼一个等价的 curl 命令文本，用于调试面板"复制即可复刻"。 */
+/** 拼一个等价的 curl 命令文本，用于调试面板"复制即可复刻"。history 不展示在 curl 里保持简洁。 */
 export function buildCurl(payload: ChatDemoRequest, baseUrl: string = API_BASE): string {
-  const json = JSON.stringify(payload);
+  const { history: _history, ...rest } = payload;
+  const json = JSON.stringify(rest);
   return [
     `curl -X POST ${baseUrl}/v1/chat/demo \\`,
     `  -H "Content-Type: application/json" \\`,

@@ -32,12 +32,14 @@ class LLMError(RuntimeError):
 
 
 class LLMProvider(Protocol):
-    """LLM provider 接口。所有 provider 必须实现该签名。
+    """LLM provider 接口。所有 provider 必须实现该签名。"""
 
-    刻意保留极简签名（scene + user_text → str），后续多轮、工具调用再扩展。
-    """
-
-    async def complete(self, scene: str, user_text: str) -> str: ...
+    async def complete(
+        self,
+        scene: str,
+        user_text: str,
+        history: list[dict] | None = None,
+    ) -> str: ...
 
 
 class MockProvider:
@@ -56,7 +58,12 @@ class MockProvider:
 
     _DEFAULT_TEMPLATE = "我在听。{echo}你愿意多说一点吗？"
 
-    async def complete(self, scene: str, user_text: str) -> str:
+    async def complete(
+        self,
+        scene: str,
+        user_text: str,
+        history: list[dict] | None = None,
+    ) -> str:
         template = self._SCENE_TEMPLATES.get(scene, self._DEFAULT_TEMPLATE)
         echo = f"你说「{user_text.strip()[:40]}」，" if user_text.strip() else ""
         return template.format(echo=echo)

@@ -5,6 +5,7 @@ demo 阶段仅维护后端一份，前端按字符串字面量传入。
 """
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -25,11 +26,30 @@ class Scene(str, Enum):
     LONELINESS = "loneliness"
 
 
+class HistoryMessage(BaseModel):
+    """单条历史消息，角色为 user 或 assistant。"""
+
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class ChatDemoRequest(BaseModel):
-    """单轮 demo 请求。下周五 demo 刻意不做多轮上下文。"""
+    """单轮 demo 请求，支持传入历史上下文。
+
+    scene 为 None 时由后端 LLM 自动分类；通常前端只在每个会话的**第一句**
+    传 None，后续轮次把响应里返回的 scene 传回来，避免重复分类带来的延迟与成本。
+    """
 
     user_text: str = Field(..., description="用户本轮输入；空字符串会走 safety 兜底")
-    scene: Scene = Field(default=Scene.LONELINESS, description="本轮所处场景")
+    scene: Scene | None = Field(
+        default=None,
+        description="本轮场景；为 None 时后端用 SceneClassifier 自动分类",
+    )
+    history: list[HistoryMessage] = Field(
+        default_factory=list,
+        max_length=20,
+        description="最近对话历史（最多 20 条 / 10 轮），不含本轮 user_text",
+    )
 
 
 class ChatDemoResponse(BaseModel):

@@ -129,8 +129,10 @@ export function PixelJellyfish({ thinking = false, degraded = false, size = 168 
                 key={`${x}-${y}`}
                 x={x * PIXEL}
                 y={y * PIXEL}
-                width={PIXEL}
-                height={PIXEL}
+                // 略微 overscan 半个像素让相邻方块重叠覆盖，
+                // 消除浏览器缩放 SVG 时相邻 <rect> 之间露出的亚像素缝。
+                width={PIXEL + 0.5}
+                height={PIXEL + 0.5}
                 fill={fill}
                 className={isEye ? "momo-eye" : undefined}
               />
