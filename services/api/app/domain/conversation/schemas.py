@@ -56,6 +56,7 @@ class ChatDemoResponse(BaseModel):
     """单轮 demo 响应。
 
     - `reply` 永远有值，前端可直接渲染；
+    - `audio_base64` 音频与文字一起返回，省去前端的第二次请求；
     - `safety_flag` 用于前端判断是否在 UI 上加"建议联系信任的人"等提示；
     - `is_mock` 在 demo 阶段透明化，方便现场区分回复来源。
     """
@@ -69,3 +70,6 @@ class ChatDemoResponse(BaseModel):
         default=False,
         description="true 表示原本走真模型但调用失败已降级到 Mock；前端可以加'临时离线'提示",
     )
+    audio_base64: str = Field(default="", description="MP3 base64；空串时前端降级浏览器朗读")
+    audio_content_type: str = Field(default="audio/mpeg")
+    audio_is_mock: bool = Field(default=False)

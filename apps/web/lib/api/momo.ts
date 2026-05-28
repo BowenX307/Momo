@@ -43,6 +43,10 @@ export interface ChatDemoResponse {
   request_id: string;
   /** true 表示原本走真模型但调用失败已降级到 Mock */
   degraded: boolean;
+  /** 音频与文字一起返回，省去第二次请求；空串时前端降级浏览器朗读 */
+  audio_base64: string;
+  audio_content_type: string;
+  audio_is_mock: boolean;
 }
 
 export interface HealthResponse {
@@ -50,6 +54,29 @@ export interface HealthResponse {
   env: string;
   llm_provider: "mock" | "deepseek";
   llm_is_mock: boolean;
+  stt_provider?: "mock" | "whisper";
+  stt_is_mock?: boolean;
+  tts_provider?: "mock" | "minimax" | "siliconflow" | "doubao";
+  tts_is_mock?: boolean;
+}
+
+export interface SynthesizeRequest {
+  text: string;
+  scene?: Scene | null;
+}
+
+export interface SynthesizeResponse {
+  audio_base64: string;
+  content_type: string;
+  is_mock: boolean;
+  request_id: string;
+}
+
+export interface TranscribeResponse {
+  text: string;
+  language: string;
+  is_mock: boolean;
+  request_id: string;
 }
 
 export const API_BASE: string =
@@ -97,6 +124,143 @@ export async function fetchChatDemo(
   }
 
   return (await res.json()) as ChatDemoResponse;
+}
+
+/** 上传音频到 /v1/speech/transcribe，返回转写文本。 */
+export async function fetchTranscribe(
+  audio: Blob,
+  options: { signal?: AbortSignal; baseUrl?: string; filename?: string } = {},
+): Promise<TranscribeResponse> {
+  const base = options.baseUrl ?? API_BASE;
+  const form = new FormData();
+  form.append("audio", audio, options.filename ?? "clip.webm");
+
+  let res: Response;
+  try {
+    res = await fetch(`${base}/v1/speech/transcribe`, {
+      method: "POST",
+      body: form,
+      signal: options.signal,
+    });
+  } catch (err) {
+    throw new MomoApiError(
+      err instanceof Error ? err.message : "network error",
+    );
+  }
+
+  if (!res.ok) {
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      body = await res.text().catch(() => undefined);
+    }
+    throw new MomoApiError(`HTTP ${res.status}`, res.status, body);
+  }
+
+  return (await res.json()) as TranscribeResponse;
+}
+
+/** 把 MOMO 回复合成为语音（MP3 base64）。 */
+export async function fetchSynthesize(
+  payload: SynthesizeRequest,
+  options: { signal?: AbortSignal; baseUrl?: string } = {},
+): Promise<SynthesizeResponse> {
+  const base = options.baseUrl ?? API_BASE;
+  let res: Response;
+  try {
+    res = await fetch(`${base}/v1/speech/synthesize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: options.signal,
+    });
+  } catch (err) {
+    throw new MomoApiError(
+      err instanceof Error ? err.message : "network error",
+    );
+  }
+
+  if (!res.ok) {
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      body = await res.text().catch(() => undefined);
+    }
+    throw new MomoApiError(`HTTP ${res.status}`, res.status, body);
+  }
+
+  return (await res.json()) as SynthesizeResponse;
+}
+
+export interface StreamAudioEvent {
+  type: "audio";
+  index: number;
+  audio_base64: string;
+  content_type: string;
+  is_mock: boolean;
+}
+
+export interface StreamDoneEvent {
+  type: "done";
+  reply: string;
+  scene: Scene;
+  safety_flag: SafetyFlag;
+  is_mock: boolean;
+  request_id: string;
+  degraded: boolean;
+}
+
+/** 调 /v1/chat/demo/stream（SSE）。audio 事件先于 done 事件到达。 */
+export async function fetchChatDemoStream(
+  payload: ChatDemoRequest,
+  callbacks: {
+    onAudio?: (event: StreamAudioEvent) => void;
+    onDone: (event: StreamDoneEvent) => void;
+  },
+  options: { signal?: AbortSignal; baseUrl?: string } = {},
+): Promise<void> {
+  const base = options.baseUrl ?? API_BASE;
+  let res: Response;
+  try {
+    res = await fetch(`${base}/v1/chat/demo/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: options.signal,
+    });
+  } catch (err) {
+    throw new MomoApiError(err instanceof Error ? err.message : "network error");
+  }
+
+  if (!res.ok) {
+    let body: unknown;
+    try { body = await res.json(); } catch { body = await res.text().catch(() => undefined); }
+    throw new MomoApiError(`HTTP ${res.status}`, res.status, body);
+  }
+
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6).trim();
+      if (!data) continue;
+      try {
+        const ev = JSON.parse(data) as StreamAudioEvent | StreamDoneEvent;
+        if (ev.type === "audio") callbacks.onAudio?.(ev);
+        else if (ev.type === "done") callbacks.onDone(ev);
+      } catch { /* skip malformed lines */ }
+    }
+  }
 }
 
 /** 调 /health 拿 provider 状态；失败时返回 null（前端按"未知"展示）。 */

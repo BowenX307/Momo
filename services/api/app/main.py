@@ -9,6 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import router as v1_router
 from app.core.config import settings
 from app.llm.factory import get_llm_provider
+from app.stt.factory import get_stt_provider
+from app.tts.factory import get_tts_provider
 
 logger = structlog.get_logger()
 
@@ -48,10 +50,16 @@ async def root():
 
 @app.get("/health")
 async def health():
-    _, is_mock = get_llm_provider()
+    _, llm_is_mock = get_llm_provider()
+    _, stt_is_mock = get_stt_provider()
+    _, tts_is_mock = get_tts_provider()
     return {
         "status": "healthy",
         "env": settings.env,
         "llm_provider": settings.llm_provider,
-        "llm_is_mock": is_mock,
+        "llm_is_mock": llm_is_mock,
+        "stt_provider": settings.stt_provider,
+        "stt_is_mock": stt_is_mock,
+        "tts_provider": settings.tts_provider,
+        "tts_is_mock": tts_is_mock,
     }

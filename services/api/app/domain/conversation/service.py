@@ -15,16 +15,45 @@ scene 路由：
   避免每轮都跑一次分类（多 1 次 LLM 调用 ≈ 多花 50% token 与延迟）。
 """
 
+import base64
+import json
+from collections.abc import AsyncGenerator
 from uuid import uuid4
 
 import structlog
 
 from app.domain.conversation.schemas import ChatDemoRequest, ChatDemoResponse, Scene
 from app.domain.safety import check as safety_check
+from app.domain.speech.service import _clean_for_tts
 from app.llm.classifier import SceneClassifier
 from app.llm.provider import LLMError, LLMProvider, MockProvider
+from app.tts.provider import TTSError, TTSProvider
+
+_SENTENCE_ENDS = frozenset("。？！…\n")
 
 logger = structlog.get_logger(__name__)
+
+
+async def _synthesize_audio(
+    reply: str,
+    scene: Scene,
+    tts_provider: TTSProvider,
+    tts_is_mock: bool,
+    request_id: str,
+) -> tuple[str, str, bool]:
+    """调用 TTS，返回 (audio_base64, content_type, is_mock)。失败时静默降级返回空音频。"""
+    try:
+        result = await tts_provider.synthesize(_clean_for_tts(reply), scene=scene.value)
+        audio_b64 = base64.b64encode(result.audio).decode("ascii") if result.audio else ""
+        return audio_b64, result.content_type, tts_is_mock
+    except TTSError as exc:
+        logger.warning(
+            "chat_demo_tts_failed",
+            request_id=request_id,
+            error_code=exc.code,
+            error_message=str(exc),
+        )
+        return "", "audio/mpeg", True
 
 
 async def handle_chat_demo(
@@ -32,6 +61,8 @@ async def handle_chat_demo(
     provider: LLMProvider,
     classifier: SceneClassifier,
     is_mock: bool,
+    tts_provider: TTSProvider | None = None,
+    tts_is_mock: bool = True,
 ) -> ChatDemoResponse:
     """处理一次 demo 对话。
 
@@ -45,7 +76,6 @@ async def handle_chat_demo(
 
     safety = safety_check(request.user_text)
     if not safety.allowed:
-        # safety 命中：用前端传的 scene 或默认 loneliness 透回；不调用 classifier。
         scene = request.scene or Scene.LONELINESS
         logger.info(
             "chat_demo_safety_fallback",
@@ -53,12 +83,20 @@ async def handle_chat_demo(
             scene=scene.value,
             reason=safety.reason,
         )
+        audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
+        if tts_provider:
+            audio_b64, audio_ct, audio_mock = await _synthesize_audio(
+                safety.fallback_text, scene, tts_provider, tts_is_mock, request_id
+            )
         return ChatDemoResponse(
             reply=safety.fallback_text,
             scene=scene,
             safety_flag=safety.reason,
             is_mock=is_mock,
             request_id=request_id,
+            audio_base64=audio_b64,
+            audio_content_type=audio_ct,
+            audio_is_mock=audio_mock,
         )
 
     if request.scene is None:
@@ -88,12 +126,20 @@ async def handle_chat_demo(
             is_mock=is_mock,
             reply_chars=len(reply),
         )
+        audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
+        if tts_provider:
+            audio_b64, audio_ct, audio_mock = await _synthesize_audio(
+                reply, scene, tts_provider, tts_is_mock, request_id
+            )
         return ChatDemoResponse(
             reply=reply,
             scene=scene,
             safety_flag="ok",
             is_mock=is_mock,
             request_id=request_id,
+            audio_base64=audio_b64,
+            audio_content_type=audio_ct,
+            audio_is_mock=audio_mock,
         )
     except LLMError as exc:
         logger.warning(
@@ -106,6 +152,11 @@ async def handle_chat_demo(
         mock_reply = await MockProvider().complete(
             scene=scene.value, user_text=request.user_text, history=history
         )
+        audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
+        if tts_provider:
+            audio_b64, audio_ct, audio_mock = await _synthesize_audio(
+                mock_reply, scene, tts_provider, tts_is_mock, request_id
+            )
         return ChatDemoResponse(
             reply=mock_reply,
             scene=scene,
@@ -113,4 +164,110 @@ async def handle_chat_demo(
             is_mock=True,
             request_id=request_id,
             degraded=True,
+            audio_base64=audio_b64,
+            audio_content_type=audio_ct,
+            audio_is_mock=audio_mock,
         )
+
+
+async def _iter_sentences(
+    token_stream: AsyncGenerator[str, None],
+) -> AsyncGenerator[str, None]:
+    """把 token 流按句子边界切分，每完整一句 yield 一次。"""
+    buf = ""
+    async for token in token_stream:
+        buf += token
+        if buf[-1] in _SENTENCE_ENDS:
+            sentence = buf.strip()
+            if sentence:
+                yield sentence
+            buf = ""
+    if buf.strip():
+        yield buf.strip()
+
+
+async def stream_chat_demo(
+    request: ChatDemoRequest,
+    provider: LLMProvider,
+    classifier: SceneClassifier,
+    tts_provider: TTSProvider | None,
+    tts_is_mock: bool,
+) -> AsyncGenerator[str, None]:
+    """流式版本：LLM 逐句输出，每句完成立刻 TTS，以 SSE data 行 yield。"""
+    request_id = uuid4().hex
+
+    safety = safety_check(request.user_text)
+    if not safety.allowed:
+        scene = request.scene or Scene.LONELINESS
+        audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
+        if tts_provider:
+            audio_b64, audio_ct, audio_mock = await _synthesize_audio(
+                safety.fallback_text, scene, tts_provider, tts_is_mock, request_id
+            )
+        yield "data: " + json.dumps({
+            "type": "audio", "index": 0,
+            "audio_base64": audio_b64, "content_type": audio_ct, "is_mock": audio_mock,
+        }) + "\n\n"
+        yield "data: " + json.dumps({
+            "type": "done", "reply": safety.fallback_text, "scene": scene.value,
+            "safety_flag": safety.reason, "is_mock": False,
+            "request_id": request_id, "degraded": False,
+        }) + "\n\n"
+        return
+
+    if request.scene is None:
+        scene = await classifier.classify(request.user_text)
+    else:
+        scene = request.scene
+
+    history = (
+        [{"role": m.role, "content": m.content} for m in request.history]
+        if request.history
+        else None
+    )
+
+    full_reply = ""
+    sentence_idx = 0
+
+    try:
+        token_stream = provider.stream_complete(  # type: ignore[attr-defined]
+            scene=scene.value, user_text=request.user_text, history=history
+        )
+        async for sentence in _iter_sentences(token_stream):
+            full_reply += sentence
+            audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
+            if tts_provider:
+                audio_b64, audio_ct, audio_mock = await _synthesize_audio(
+                    sentence, scene, tts_provider, tts_is_mock, request_id
+                )
+            yield "data: " + json.dumps({
+                "type": "audio", "index": sentence_idx,
+                "audio_base64": audio_b64, "content_type": audio_ct, "is_mock": audio_mock,
+            }) + "\n\n"
+            sentence_idx += 1
+
+    except (LLMError, AttributeError):
+        # provider 不支持流式（如 Mock）：降级到一次性调用
+        try:
+            full_reply = await provider.complete(
+                scene=scene.value, user_text=request.user_text, history=history
+            )
+        except LLMError:
+            full_reply = await MockProvider().complete(
+                scene=scene.value, user_text=request.user_text, history=history
+            )
+        audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
+        if tts_provider:
+            audio_b64, audio_ct, audio_mock = await _synthesize_audio(
+                full_reply, scene, tts_provider, tts_is_mock, request_id
+            )
+        yield "data: " + json.dumps({
+            "type": "audio", "index": 0,
+            "audio_base64": audio_b64, "content_type": audio_ct, "is_mock": audio_mock,
+        }) + "\n\n"
+
+    yield "data: " + json.dumps({
+        "type": "done", "reply": full_reply, "scene": scene.value,
+        "safety_flag": "ok", "is_mock": False,
+        "request_id": request_id, "degraded": False,
+    }) + "\n\n"

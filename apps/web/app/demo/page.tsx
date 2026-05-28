@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   API_BASE,
   buildCurl,
-  fetchChatDemo,
+  fetchChatDemoStream,
   fetchHealth,
   MomoApiError,
   type ChatDemoRequest,
@@ -25,18 +25,35 @@ import {
   type HistoryMessage,
   type Scene,
 } from "@/lib/api/momo";
+import {
+  enqueueAudio,
+  hadRealAudio,
+  speakWithBrowser,
+  stopAudioQueue,
+  whenQueueDone,
+} from "@/lib/speech/playMomoSpeech";
+
+import {
+  clearSession,
+  formatRelativeTime,
+  loadSession,
+  saveSession,
+  type ConvTurn as PersistedConvTurn,
+} from "@/lib/session/persistSession";
 
 import { DebugDrawer } from "./_components/DebugDrawer";
 import { PixelJellyfish } from "./_components/PixelJellyfish";
 import { StatusHint } from "./_components/StatusHint";
+import { ThinkingPhrases } from "./_components/ThinkingPhrases";
+import {
+  VoiceInputButton,
+  type VoicePhase,
+} from "./_components/VoiceInputButton";
 
 const INITIAL_GREETING = "我在的。无论是哪种心情，都可以慢慢说，我会一直在。";
-const MAX_HISTORY_DISPLAY = 3; // 最多展示几条历史气泡
+const MAX_HISTORY_DISPLAY = 3;
 
-interface ConvTurn {
-  userText: string;
-  reply: string;
-}
+type ConvTurn = PersistedConvTurn;
 
 export default function DemoPage() {
   // scene 由后端在第一句话上自动分类；此后整个会话都沿用，不再每轮重判。
@@ -46,20 +63,65 @@ export default function DemoPage() {
   const [reply, setReply] = useState<string>(INITIAL_GREETING);
   const [replyKey, setReplyKey] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [voicePhase, setVoicePhase] = useState<VoicePhase>("idle");
   const [lastResponse, setLastResponse] = useState<ChatDemoResponse | null>(null);
   const [lastCurl, setLastCurl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [history, setHistory] = useState<HistoryMessage[]>([]);
   const [turns, setTurns] = useState<ConvTurn[]>([]);
+  const [recordingTrigger, setRecordingTrigger] = useState(0);
+  const [conversationActive, setConversationActive] = useState(false);
+  const conversationActiveRef = useRef(false);
+  const [restoredAt, setRestoredAt] = useState<number | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const historyEndRef = useRef<HTMLDivElement | null>(null);
 
+  function handleStartConversation() {
+    conversationActiveRef.current = true;
+    setConversationActive(true);
+    setRecordingTrigger((t) => t + 1);
+  }
+
+  function handleEndConversation() {
+    conversationActiveRef.current = false;
+    setConversationActive(false);
+    stopAudioQueue();
+    setSpeaking(false);
+    abortRef.current?.abort();
+    setLoading(false);
+  }
+
+  function handleClearSession() {
+    clearSession();
+    setHistory([]);
+    setScene(null);
+    setTurns([]);
+    setReply(INITIAL_GREETING);
+    setReplyKey((k) => k + 1);
+    setRestoredAt(null);
+    setError(null);
+  }
+
   useEffect(() => {
+    const saved = loadSession();
+    if (saved) {
+      setHistory(saved.history);
+      setScene(saved.scene);
+      setTurns(saved.turns);
+      setRestoredAt(saved.savedAt);
+      if (saved.turns.length > 0) {
+        setReply(saved.turns[saved.turns.length - 1].reply);
+      }
+    }
     const ctrl = new AbortController();
     fetchHealth({ signal: ctrl.signal }).then(setHealth).catch(() => {});
-    return () => ctrl.abort();
+    return () => {
+      ctrl.abort();
+      stopAudioQueue();
+    };
   }, []);
 
   function applyReply(text: string) {
@@ -67,38 +129,88 @@ export default function DemoPage() {
     setReplyKey((k) => k + 1);
   }
 
-  async function handleSend() {
-    const text = input.trim();
+  async function handleSend(overrideText?: string) {
+    const text = (overrideText ?? input).trim();
     if (!text || loading) return;
 
     abortRef.current?.abort();
+    stopAudioQueue();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
     setLoading(true);
     setError(null);
-    // 第一句话不传 scene → 后端自动分类；后续把已锁定的 scene 传回，避免重复分类。
+    setInput("");
     const payload: ChatDemoRequest = scene
       ? { user_text: text, scene, history }
       : { user_text: text, history };
     setLastCurl(buildCurl(payload, API_BASE));
 
+    // Capture state values for use inside callbacks (React closure safety).
+    const capturedHistory = history;
+    const capturedTurns = turns;
+    const capturedScene = scene;
+
     try {
-      const res = await fetchChatDemo(payload, { signal: ctrl.signal });
-      setLastResponse(res);
-      applyReply(res.reply);
-      setInput("");
-      // 锁定本会话场景：后端可能是从分类得来，也可能就是我们传上去的，统一以响应为准。
-      if (res.scene !== scene) setScene(res.scene);
+      await fetchChatDemoStream(
+        payload,
+        {
+          onAudio: (ev) => {
+            enqueueAudio(ev.audio_base64, ev.content_type, ev.is_mock);
+          },
+          onDone: (ev) => {
+            if (ctrl.signal.aborted) return;
 
-      const nextHistory: HistoryMessage[] = [
-        ...history,
-        { role: "user" as const, content: text },
-        { role: "assistant" as const, content: res.reply },
-      ].slice(-20);
-      setHistory(nextHistory);
+            applyReply(ev.reply);
+            if (ev.scene !== capturedScene) setScene(ev.scene);
 
-      setTurns((prev) => [...prev, { userText: text, reply: res.reply }]);
+            const nextHistory: HistoryMessage[] = [
+              ...capturedHistory,
+              { role: "user" as const, content: text },
+              { role: "assistant" as const, content: ev.reply },
+            ].slice(-20);
+            setHistory(nextHistory);
+
+            const nextTurns = [...capturedTurns, { userText: text, reply: ev.reply }];
+            setTurns(nextTurns);
+            saveSession({ history: nextHistory, scene: ev.scene, turns: nextTurns, savedAt: Date.now() });
+            setRestoredAt(null);
+
+            setLastResponse({
+              reply: ev.reply,
+              scene: ev.scene,
+              safety_flag: ev.safety_flag,
+              is_mock: ev.is_mock,
+              request_id: ev.request_id,
+              degraded: ev.degraded,
+              audio_base64: "",
+              audio_content_type: "audio/mpeg",
+              audio_is_mock: !hadRealAudio(),
+            } satisfies ChatDemoResponse);
+
+            setLoading(false);
+            setSpeaking(true);
+
+            const afterSpeak = () => {
+              if (!ctrl.signal.aborted) {
+                setSpeaking(false);
+                if (conversationActiveRef.current) {
+                  setRecordingTrigger((t) => t + 1);
+                }
+              }
+            };
+
+            if (hadRealAudio()) {
+              void whenQueueDone().then(afterSpeak);
+            } else {
+              void speakWithBrowser(ev.reply).then(afterSpeak).catch(afterSpeak);
+            }
+          },
+        },
+        { signal: ctrl.signal },
+      );
+      // If onDone was never called (empty stream), clean up loading.
+      if (!ctrl.signal.aborted) setLoading(false);
     } catch (err) {
       if (ctrl.signal.aborted) return;
       const msg =
@@ -108,8 +220,7 @@ export default function DemoPage() {
             ? err.message
             : "未知错误";
       setError(msg);
-    } finally {
-      if (!ctrl.signal.aborted) setLoading(false);
+      setLoading(false);
     }
   }
 
@@ -152,7 +263,7 @@ export default function DemoPage() {
       </header>
 
       <main className="flex flex-1 flex-col items-center justify-center gap-6 px-6 pb-10 sm:px-10">
-        <PixelJellyfish thinking={loading} degraded={degraded} size={192} />
+        <PixelJellyfish thinking={loading || speaking} degraded={degraded} size={192} />
 
         {/* 历史气泡区：最近几轮对话，小字 + 半透明 */}
         {recentTurns.length > 0 && (
@@ -182,27 +293,59 @@ export default function DemoPage() {
             className="min-h-[3em] text-center text-base leading-relaxed text-stone-800 sm:text-lg dark:text-stone-100"
             style={{ animation: "momo-fade-in 420ms ease-out both" }}
           >
-            {loading ? <ThinkingDots /> : reply}
+            {loading ? (
+              <ThinkingPhrases variant="thinking" />
+            ) : voicePhase === "transcribing" ? (
+              <ThinkingPhrases variant="transcribing" />
+            ) : voicePhase === "recording" ? (
+              <span className="text-stone-400">我在听…</span>
+            ) : (
+              reply
+            )}
           </p>
           <StatusHint safetyFlag={safetyFlag} degraded={degraded} error={error} />
         </div>
 
+        {/* 会话恢复提示 */}
+        {restoredAt !== null && (
+          <div className="flex w-full max-w-md items-center justify-between text-xs text-stone-400 dark:text-stone-500">
+            <span>上次聊到这里 · {formatRelativeTime(restoredAt)}</span>
+            <button
+              type="button"
+              onClick={handleClearSession}
+              className="rounded px-2 py-0.5 hover:text-stone-600 dark:hover:text-stone-300"
+            >
+              重新开始
+            </button>
+          </div>
+        )}
+
         {/* 输入框：scene 由后端自动分类，用户不再选 */}
         <div className="w-full max-w-md">
           <div className="flex items-end gap-2 rounded-2xl border border-stone-200 bg-white/70 p-2 focus-within:border-[#e88c6a] focus-within:bg-white dark:border-stone-800 dark:bg-stone-900/60 dark:focus-within:border-[#c66645] dark:focus-within:bg-stone-900">
+            <VoiceInputButton
+              disabled={loading || speaking}
+              startTrigger={recordingTrigger}
+              conversationActive={conversationActive}
+              onStartConversation={handleStartConversation}
+              onEndConversation={handleEndConversation}
+              onPhaseChange={setVoicePhase}
+              onTranscript={(text) => void handleSend(text)}
+              onError={setError}
+            />
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="说点什么…（Enter 发送，Shift+Enter 换行）"
+              placeholder="说点什么，或点左边麦克风…"
               rows={1}
-              disabled={loading}
+              disabled={loading || speaking}
               className="flex-1 resize-none bg-transparent px-2 py-1.5 text-base leading-relaxed text-stone-900 placeholder-stone-400 outline-none disabled:opacity-60 dark:text-stone-100 dark:placeholder-stone-500"
             />
             <button
               type="button"
-              onClick={handleSend}
-              disabled={loading || !input.trim()}
+              onClick={() => void handleSend()}
+              disabled={loading || speaking || !input.trim()}
               className="shrink-0 rounded-xl bg-[#d97757] px-3.5 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[#c66645] disabled:cursor-not-allowed disabled:bg-stone-300 dark:disabled:bg-stone-700"
             >
               {loading ? "等一下" : "发送"}
@@ -218,27 +361,5 @@ export default function DemoPage() {
         lastCurl={lastCurl}
       />
     </div>
-  );
-}
-
-function ThinkingDots() {
-  return (
-    <span className="inline-flex items-end gap-1 text-stone-400">
-      <Dot delay="0s" />
-      <Dot delay="0.18s" />
-      <Dot delay="0.36s" />
-    </span>
-  );
-}
-
-function Dot({ delay }: { delay: string }) {
-  return (
-    <span
-      className="inline-block h-1.5 w-1.5 rounded-full bg-current"
-      style={{
-        animation: "momo-tentacle-think 1.1s ease-in-out infinite",
-        animationDelay: delay,
-      }}
-    />
   );
 }
