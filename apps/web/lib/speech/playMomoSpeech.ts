@@ -45,10 +45,23 @@ function _playOneChunk(base64: string, contentType: string): Promise<void> {
     currentAudio = audio;
 
     const revokeUrl = () => URL.revokeObjectURL(url);
+    let settled = false;
     const done = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(failsafe);
       if (currentAudio === audio) currentAudio = null;
       revokeUrl();
       resolve();
+    };
+
+    // Mobile browsers may silently block audio and never fire events — always resolve eventually.
+    const failsafe = setTimeout(done, 15_000);
+
+    const playDirect = () => {
+      audio.onended = done;
+      audio.onerror = done;
+      void audio.play().catch(done);
     };
 
     try {
@@ -69,12 +82,14 @@ function _playOneChunk(base64: string, contentType: string): Promise<void> {
         if (currentAudioCtx === ctx) currentAudioCtx = null;
         done();
       };
-      // iOS Safari requires AudioContext.resume() after creation before any playback.
-      void ctx.resume().then(() => audio.play()).catch(() => { revokeUrl(); done(); });
+      // On iOS, AudioContext starts suspended; race resume() against a short timeout
+      // so we don't hang forever if the browser never grants permission.
+      const resumeTimeout = new Promise<void>((r) => setTimeout(r, 1_500));
+      void Promise.race([ctx.resume(), resumeTimeout])
+        .then(() => audio.play())
+        .catch(done);
     } catch {
-      audio.onended = done;
-      audio.onerror = done;
-      void audio.play().catch(() => { revokeUrl(); done(); });
+      playDirect();
     }
   });
 }
