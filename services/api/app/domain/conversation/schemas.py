@@ -26,6 +26,17 @@ class Scene(str, Enum):
     LONELINESS = "loneliness"
 
 
+class Persona(str, Enum):
+    """AI 陪伴人格。
+
+    - momo：温柔水母，稳定陪伴
+    - iris：毒舌损友，高洞察力
+    """
+
+    MOMO = "momo"
+    IRIS = "iris"
+
+
 class HistoryMessage(BaseModel):
     """单条历史消息，角色为 user 或 assistant。"""
 
@@ -44,6 +55,10 @@ class ChatDemoRequest(BaseModel):
     scene: Scene | None = Field(
         default=None,
         description="本轮场景；为 None 时后端用 SceneClassifier 自动分类",
+    )
+    persona: Persona = Field(
+        default=Persona.MOMO,
+        description="AI 人格选择；默认 momo，可切换为 iris",
     )
     history: list[HistoryMessage] = Field(
         default_factory=list,

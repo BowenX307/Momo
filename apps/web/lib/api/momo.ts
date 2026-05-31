@@ -16,6 +16,9 @@ export const SCENES = [
 
 export type Scene = (typeof SCENES)[number];
 
+export const PERSONAS = ["momo", "iris"] as const;
+export type Persona = (typeof PERSONAS)[number];
+
 export type SafetyFlag =
   | "ok"
   | "empty_input"
@@ -32,6 +35,8 @@ export interface ChatDemoRequest {
   /** 可选：每个会话第一句留空，让后端自动分类；后续轮把响应里的 scene 传回，
    * 避免每轮都跑一次分类（多 1 次 LLM 调用）。 */
   scene?: Scene | null;
+  /** AI 人格，默认 momo。切换人格时前端应重置会话。 */
+  persona?: Persona;
   history?: HistoryMessage[];
 }
 

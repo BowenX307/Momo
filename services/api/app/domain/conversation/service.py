@@ -22,7 +22,7 @@ from uuid import uuid4
 
 import structlog
 
-from app.domain.conversation.schemas import ChatDemoRequest, ChatDemoResponse, Scene
+from app.domain.conversation.schemas import ChatDemoRequest, ChatDemoResponse, Persona, Scene
 from app.domain.safety import check as safety_check
 from app.domain.speech.service import _clean_for_tts
 from app.llm.classifier import SceneClassifier
@@ -117,12 +117,14 @@ async def handle_chat_demo(
 
     try:
         reply = await provider.complete(
-            scene=scene.value, user_text=request.user_text, history=history
+            scene=scene.value, user_text=request.user_text, history=history,
+            persona=request.persona.value,
         )
         logger.info(
             "chat_demo_ok",
             request_id=request_id,
             scene=scene.value,
+            persona=request.persona.value,
             is_mock=is_mock,
             reply_chars=len(reply),
         )
@@ -150,7 +152,8 @@ async def handle_chat_demo(
             upstream_status=exc.upstream_status,
         )
         mock_reply = await MockProvider().complete(
-            scene=scene.value, user_text=request.user_text, history=history
+            scene=scene.value, user_text=request.user_text, history=history,
+            persona=request.persona.value,
         )
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
         if tts_provider:
@@ -231,7 +234,8 @@ async def stream_chat_demo(
 
     try:
         token_stream = provider.stream_complete(  # type: ignore[attr-defined]
-            scene=scene.value, user_text=request.user_text, history=history
+            scene=scene.value, user_text=request.user_text, history=history,
+            persona=request.persona.value,
         )
         async for sentence in _iter_sentences(token_stream):
             full_reply += sentence
@@ -250,11 +254,13 @@ async def stream_chat_demo(
         # provider 不支持流式（如 Mock）：降级到一次性调用
         try:
             full_reply = await provider.complete(
-                scene=scene.value, user_text=request.user_text, history=history
+                scene=scene.value, user_text=request.user_text, history=history,
+                persona=request.persona.value,
             )
         except LLMError:
             full_reply = await MockProvider().complete(
-                scene=scene.value, user_text=request.user_text, history=history
+                scene=scene.value, user_text=request.user_text, history=history,
+                persona=request.persona.value,
             )
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
         if tts_provider:

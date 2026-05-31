@@ -23,6 +23,7 @@ import {
   type ChatDemoResponse,
   type HealthResponse,
   type HistoryMessage,
+  type Persona,
   type Scene,
 } from "@/lib/api/momo";
 import {
@@ -50,7 +51,15 @@ import {
   type VoicePhase,
 } from "./_components/VoiceInputButton";
 
-const INITIAL_GREETING = "我在的。无论是哪种心情，都可以慢慢说，我会一直在。";
+const PERSONA_GREETINGS: Record<Persona, string> = {
+  momo: "我在的。无论是哪种心情，都可以慢慢说，我会一直在。",
+  iris: "来了？直接说吧，我在听。",
+};
+
+const PERSONA_LABELS: Record<Persona, string> = {
+  momo: "MOMO",
+  iris: "Iris",
+};
 const MAX_HISTORY_DISPLAY = 3;
 
 type ConvTurn = PersistedConvTurn;
@@ -59,8 +68,9 @@ export default function DemoPage() {
   // scene 由后端在第一句话上自动分类；此后整个会话都沿用，不再每轮重判。
   // null = 第一句话还没发过 / 用户尚未"开口定调"。
   const [scene, setScene] = useState<Scene | null>(null);
+  const [persona, setPersona] = useState<Persona>("momo");
   const [input, setInput] = useState("");
-  const [reply, setReply] = useState<string>(INITIAL_GREETING);
+  const [reply, setReply] = useState<string>(PERSONA_GREETINGS.momo);
   const [replyKey, setReplyKey] = useState(0);
   const [loading, setLoading] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -99,10 +109,27 @@ export default function DemoPage() {
     setHistory([]);
     setScene(null);
     setTurns([]);
-    setReply(INITIAL_GREETING);
+    setReply(PERSONA_GREETINGS[persona]);
     setReplyKey((k) => k + 1);
     setRestoredAt(null);
     setError(null);
+  }
+
+  function handlePersonaChange(next: Persona) {
+    if (next === persona) return;
+    setPersona(next);
+    clearSession();
+    setHistory([]);
+    setScene(null);
+    setTurns([]);
+    setReply(PERSONA_GREETINGS[next]);
+    setReplyKey((k) => k + 1);
+    setRestoredAt(null);
+    setError(null);
+    stopAudioQueue();
+    setSpeaking(false);
+    abortRef.current?.abort();
+    setLoading(false);
   }
 
   useEffect(() => {
@@ -142,8 +169,8 @@ export default function DemoPage() {
     setError(null);
     setInput("");
     const payload: ChatDemoRequest = scene
-      ? { user_text: text, scene, history }
-      : { user_text: text, history };
+      ? { user_text: text, scene, persona, history }
+      : { user_text: text, persona, history };
     setLastCurl(buildCurl(payload, API_BASE));
 
     // Capture state values for use inside callbacks (React closure safety).
@@ -257,9 +284,29 @@ export default function DemoPage() {
         }
       `}</style>
 
-      <header className="px-6 pt-6 sm:px-10 sm:pt-10">
-        <h1 className="text-lg font-medium tracking-tight">Momo</h1>
-        <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">我一直在。</p>
+      <header className="flex items-start justify-between px-6 pt-6 sm:px-10 sm:pt-10">
+        <div>
+          <h1 className="text-lg font-medium tracking-tight">{PERSONA_LABELS[persona]}</h1>
+          <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
+            {persona === "momo" ? "我一直在。" : "有什么就说。"}
+          </p>
+        </div>
+        <div className="flex gap-1 rounded-xl bg-stone-100 p-1 dark:bg-stone-800">
+          {(["momo", "iris"] as Persona[]).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => handlePersonaChange(p)}
+              className={`rounded-lg px-3 py-1 text-sm font-medium transition-colors ${
+                persona === p
+                  ? "bg-white text-stone-900 shadow-sm dark:bg-stone-700 dark:text-stone-100"
+                  : "text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200"
+              }`}
+            >
+              {PERSONA_LABELS[p]}
+            </button>
+          ))}
+        </div>
       </header>
 
       <main className="flex flex-1 flex-col items-center justify-center gap-6 px-6 pb-10 sm:px-10">
