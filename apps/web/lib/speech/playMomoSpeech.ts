@@ -69,12 +69,13 @@ function _playOneChunk(base64: string, contentType: string): Promise<void> {
         if (currentAudioCtx === ctx) currentAudioCtx = null;
         done();
       };
+      // iOS Safari requires AudioContext.resume() after creation before any playback.
+      void ctx.resume().then(() => audio.play()).catch(() => { revokeUrl(); done(); });
     } catch {
       audio.onended = done;
       audio.onerror = done;
+      void audio.play().catch(() => { revokeUrl(); done(); });
     }
-
-    void audio.play().catch(() => { revokeUrl(); done(); });
   });
 }
 
