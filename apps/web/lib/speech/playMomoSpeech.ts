@@ -3,7 +3,6 @@
 import type { SynthesizeResponse } from "@/lib/api/momo";
 
 let currentAudio: HTMLAudioElement | null = null;
-let currentAudioCtx: AudioContext | null = null;
 
 // Shared AudioContext pre-unlocked during a user gesture so subsequent
 // programmatic playback is allowed on iOS/Android.
@@ -22,10 +21,6 @@ export function stopMomoSpeech(): void {
   if (currentAudio) {
     currentAudio.pause();
     currentAudio = null;
-  }
-  if (currentAudioCtx) {
-    currentAudioCtx.close().catch(() => {});
-    currentAudioCtx = null;
   }
   if (typeof window !== "undefined" && "speechSynthesis" in window) {
     window.speechSynthesis.cancel();
@@ -47,7 +42,6 @@ export function speakWithBrowser(text: string): Promise<void> {
   });
 }
 
-const GAIN = 1.8;
 
 function _playOneChunk(base64: string, contentType: string): Promise<void> {
   return new Promise((resolve) => {
@@ -57,62 +51,24 @@ function _playOneChunk(base64: string, contentType: string): Promise<void> {
     const audio = new Audio(url);
     currentAudio = audio;
 
-    const revokeUrl = () => URL.revokeObjectURL(url);
     let settled = false;
     const done = () => {
       if (settled) return;
       settled = true;
       clearTimeout(failsafe);
       if (currentAudio === audio) currentAudio = null;
-      revokeUrl();
+      URL.revokeObjectURL(url);
       resolve();
     };
 
-    // Mobile browsers may silently block audio and never fire events — always resolve eventually.
+    // Safety net: resolve even if browser never fires audio events (common on mobile).
     const failsafe = setTimeout(done, 15_000);
 
-    const playDirect = () => {
-      audio.onended = done;
-      audio.onerror = done;
-      void audio.play().catch(done);
-    };
-
-    try {
-      // Prefer the pre-unlocked shared context so iOS allows playback.
-      const useShared = _sharedCtx && _sharedCtx.state !== "closed";
-      const ctx = useShared ? _sharedCtx! : new AudioContext();
-      if (!useShared) currentAudioCtx = ctx;
-
-      const src = ctx.createMediaElementSource(audio);
-      const gain = ctx.createGain();
-      gain.gain.value = GAIN;
-      src.connect(gain);
-      gain.connect(ctx.destination);
-      audio.onended = () => {
-        if (!useShared) {
-          ctx.close().catch(() => {});
-          if (currentAudioCtx === ctx) currentAudioCtx = null;
-        }
-        done();
-      };
-      audio.onerror = () => {
-        if (!useShared) {
-          ctx.close().catch(() => {});
-          if (currentAudioCtx === ctx) currentAudioCtx = null;
-        }
-        done();
-      };
-      if (ctx.state === "running") {
-        void audio.play().catch(done);
-      } else {
-        const resumeTimeout = new Promise<void>((r) => setTimeout(r, 1_500));
-        void Promise.race([ctx.resume(), resumeTimeout])
-          .then(() => audio.play())
-          .catch(done);
-      }
-    } catch {
-      playDirect();
-    }
+    audio.onended = done;
+    audio.onerror = done;
+    // Avoid routing through AudioContext — createMediaElementSource causes onended
+    // to fire before audio finishes coming out of the speaker on mobile.
+    void audio.play().catch(done);
   });
 }
 
