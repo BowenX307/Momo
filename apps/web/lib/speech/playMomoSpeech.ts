@@ -5,6 +5,19 @@ import type { SynthesizeResponse } from "@/lib/api/momo";
 let currentAudio: HTMLAudioElement | null = null;
 let currentAudioCtx: AudioContext | null = null;
 
+// Shared AudioContext pre-unlocked during a user gesture so subsequent
+// programmatic playback is allowed on iOS/Android.
+let _sharedCtx: AudioContext | null = null;
+
+export function unlockAudio(): void {
+  try {
+    if (!_sharedCtx || _sharedCtx.state === "closed") {
+      _sharedCtx = new AudioContext();
+    }
+    void _sharedCtx.resume();
+  } catch { /* ignore */ }
+}
+
 export function stopMomoSpeech(): void {
   if (currentAudio) {
     currentAudio.pause();
@@ -65,29 +78,38 @@ function _playOneChunk(base64: string, contentType: string): Promise<void> {
     };
 
     try {
-      const ctx = new AudioContext();
-      currentAudioCtx = ctx;
+      // Prefer the pre-unlocked shared context so iOS allows playback.
+      const useShared = _sharedCtx && _sharedCtx.state !== "closed";
+      const ctx = useShared ? _sharedCtx! : new AudioContext();
+      if (!useShared) currentAudioCtx = ctx;
+
       const src = ctx.createMediaElementSource(audio);
       const gain = ctx.createGain();
       gain.gain.value = GAIN;
       src.connect(gain);
       gain.connect(ctx.destination);
       audio.onended = () => {
-        ctx.close().catch(() => {});
-        if (currentAudioCtx === ctx) currentAudioCtx = null;
+        if (!useShared) {
+          ctx.close().catch(() => {});
+          if (currentAudioCtx === ctx) currentAudioCtx = null;
+        }
         done();
       };
       audio.onerror = () => {
-        ctx.close().catch(() => {});
-        if (currentAudioCtx === ctx) currentAudioCtx = null;
+        if (!useShared) {
+          ctx.close().catch(() => {});
+          if (currentAudioCtx === ctx) currentAudioCtx = null;
+        }
         done();
       };
-      // On iOS, AudioContext starts suspended; race resume() against a short timeout
-      // so we don't hang forever if the browser never grants permission.
-      const resumeTimeout = new Promise<void>((r) => setTimeout(r, 1_500));
-      void Promise.race([ctx.resume(), resumeTimeout])
-        .then(() => audio.play())
-        .catch(done);
+      if (ctx.state === "running") {
+        void audio.play().catch(done);
+      } else {
+        const resumeTimeout = new Promise<void>((r) => setTimeout(r, 1_500));
+        void Promise.race([ctx.resume(), resumeTimeout])
+          .then(() => audio.play())
+          .catch(done);
+      }
     } catch {
       playDirect();
     }

@@ -31,6 +31,7 @@ import {
   hadRealAudio,
   speakWithBrowser,
   stopAudioQueue,
+  unlockAudio,
   whenQueueDone,
 } from "@/lib/speech/playMomoSpeech";
 
@@ -90,6 +91,7 @@ export default function DemoPage() {
   const historyEndRef = useRef<HTMLDivElement | null>(null);
 
   function handleStartConversation() {
+    unlockAudio(); // must run inside user gesture to unblock iOS/Android autoplay
     conversationActiveRef.current = true;
     setConversationActive(true);
     setRecordingTrigger((t) => t + 1);
