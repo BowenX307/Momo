@@ -55,11 +55,13 @@ import {
 const PERSONA_GREETINGS: Record<Persona, string> = {
   momo: "我在的。无论是哪种心情，都可以慢慢说，我会一直在。",
   iris: "来了？直接说吧，我在听。",
+  rocky: "我在。你可以直接说，不用想怎么开口。",
 };
 
 const PERSONA_LABELS: Record<Persona, string> = {
   momo: "MOMO",
   iris: "Iris",
+  rocky: "Rocky",
 };
 const MAX_HISTORY_DISPLAY = 3;
 
@@ -82,6 +84,7 @@ export default function DemoPage() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [history, setHistory] = useState<HistoryMessage[]>([]);
   const [turns, setTurns] = useState<ConvTurn[]>([]);
+  const [emotion, setEmotion] = useState<string>("");
   const [recordingTrigger, setRecordingTrigger] = useState(0);
   const [conversationActive, setConversationActive] = useState(false);
   const conversationActiveRef = useRef(false);
@@ -115,6 +118,7 @@ export default function DemoPage() {
     setReplyKey((k) => k + 1);
     setRestoredAt(null);
     setError(null);
+    setEmotion("");
   }
 
   function handlePersonaChange(next: Persona) {
@@ -128,6 +132,7 @@ export default function DemoPage() {
     setReplyKey((k) => k + 1);
     setRestoredAt(null);
     setError(null);
+    setEmotion("");
     stopAudioQueue();
     setSpeaking(false);
     abortRef.current?.abort();
@@ -170,6 +175,7 @@ export default function DemoPage() {
     setLoading(true);
     setError(null);
     setInput("");
+    setEmotion("");
     const payload: ChatDemoRequest = scene
       ? { user_text: text, scene, persona, history }
       : { user_text: text, persona, history };
@@ -192,6 +198,7 @@ export default function DemoPage() {
 
             applyReply(ev.reply);
             if (ev.scene !== capturedScene) setScene(ev.scene);
+            if (ev.emotion) setEmotion(ev.emotion);
 
             const nextHistory: HistoryMessage[] = [
               ...capturedHistory,
@@ -290,11 +297,11 @@ export default function DemoPage() {
         <div>
           <h1 className="text-lg font-medium tracking-tight">{PERSONA_LABELS[persona]}</h1>
           <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
-            {persona === "momo" ? "我一直在。" : "有什么就说。"}
+            {persona === "momo" ? "我一直在。" : persona === "iris" ? "有什么就说。" : "先把问题变小。"}
           </p>
         </div>
         <div className="flex gap-1 rounded-xl bg-stone-100 p-1 dark:bg-stone-800">
-          {(["momo", "iris"] as Persona[]).map((p) => (
+          {(["momo", "iris", "rocky"] as Persona[]).map((p) => (
             <button
               key={p}
               type="button"
@@ -313,6 +320,17 @@ export default function DemoPage() {
 
       <main className="flex flex-1 flex-col items-center justify-center gap-6 px-6 pb-10 sm:px-10">
         <PixelJellyfish thinking={loading || speaking} degraded={degraded} size={192} />
+
+        {/* 情绪标签：用户说完后展示检测到的情绪 */}
+        {emotion && !loading && (
+          <div
+            className="flex items-center gap-1.5 rounded-full bg-stone-100 px-3.5 py-1 dark:bg-stone-800"
+            style={{ animation: "momo-fade-in 380ms ease-out both" }}
+          >
+            <span className="text-xs text-stone-400 dark:text-stone-500">感受到了</span>
+            <span className="text-sm font-medium text-stone-600 dark:text-stone-300">{emotion}</span>
+          </div>
+        )}
 
         {/* 历史气泡区：最近几轮对话，小字 + 半透明 */}
         {recentTurns.length > 0 && (

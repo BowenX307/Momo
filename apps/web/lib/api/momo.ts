@@ -16,7 +16,7 @@ export const SCENES = [
 
 export type Scene = (typeof SCENES)[number];
 
-export const PERSONAS = ["momo", "iris"] as const;
+export const PERSONAS = ["momo", "iris", "rocky"] as const;
 export type Persona = (typeof PERSONAS)[number];
 
 export type SafetyFlag =
@@ -52,6 +52,8 @@ export interface ChatDemoResponse {
   audio_base64: string;
   audio_content_type: string;
   audio_is_mock: boolean;
+  /** 用户输入的情绪标签；空串表示未检测到 */
+  emotion?: string;
 }
 
 export interface HealthResponse {
@@ -215,6 +217,7 @@ export interface StreamDoneEvent {
   is_mock: boolean;
   request_id: string;
   degraded: boolean;
+  emotion?: string;
 }
 
 /** 调 /v1/chat/demo/stream（SSE）。audio 事件先于 done 事件到达。 */

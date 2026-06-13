@@ -31,10 +31,12 @@ class Persona(str, Enum):
 
     - momo：温柔水母，稳定陪伴
     - iris：毒舌损友，高洞察力
+    - rocky：白斗篷小精灵，知性直接，帮用户把问题变小
     """
 
     MOMO = "momo"
     IRIS = "iris"
+    ROCKY = "rocky"
 
 
 class HistoryMessage(BaseModel):
@@ -88,3 +90,4 @@ class ChatDemoResponse(BaseModel):
     audio_base64: str = Field(default="", description="MP3 base64；空串时前端降级浏览器朗读")
     audio_content_type: str = Field(default="audio/mpeg")
     audio_is_mock: bool = Field(default=False)
+    emotion: str = Field(default="", description="用户输入的情绪标签，空串表示未检测到")

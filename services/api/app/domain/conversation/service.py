@@ -15,6 +15,7 @@ scene 路由：
   避免每轮都跑一次分类（多 1 次 LLM 调用 ≈ 多花 50% token 与延迟）。
 """
 
+import asyncio
 import base64
 import json
 from collections.abc import AsyncGenerator
@@ -32,6 +33,17 @@ from app.tts.provider import TTSError, TTSProvider
 _SENTENCE_ENDS = frozenset("。？！…\n")
 
 logger = structlog.get_logger(__name__)
+
+
+async def _detect_emotion_safe(user_text: str, provider: LLMProvider) -> str:
+    """调用 provider.detect_emotion，任何异常都静默返回空串。"""
+    detect = getattr(provider, "detect_emotion", None)
+    if detect is None:
+        return ""
+    try:
+        return await detect(user_text)
+    except Exception:
+        return ""
 
 
 async def _synthesize_audio(
@@ -116,9 +128,12 @@ async def handle_chat_demo(
     )
 
     try:
-        reply = await provider.complete(
-            scene=scene.value, user_text=request.user_text, history=history,
-            persona=request.persona.value,
+        reply, emotion = await asyncio.gather(
+            provider.complete(
+                scene=scene.value, user_text=request.user_text, history=history,
+                persona=request.persona.value,
+            ),
+            _detect_emotion_safe(request.user_text, provider),
         )
         logger.info(
             "chat_demo_ok",
@@ -127,6 +142,7 @@ async def handle_chat_demo(
             persona=request.persona.value,
             is_mock=is_mock,
             reply_chars=len(reply),
+            emotion=emotion,
         )
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
         if tts_provider:
@@ -142,6 +158,7 @@ async def handle_chat_demo(
             audio_base64=audio_b64,
             audio_content_type=audio_ct,
             audio_is_mock=audio_mock,
+            emotion=emotion,
         )
     except LLMError as exc:
         logger.warning(
@@ -229,6 +246,8 @@ async def stream_chat_demo(
         else None
     )
 
+    emotion_task = asyncio.create_task(_detect_emotion_safe(request.user_text, provider))
+
     full_reply = ""
     sentence_idx = 0
 
@@ -272,8 +291,10 @@ async def stream_chat_demo(
             "audio_base64": audio_b64, "content_type": audio_ct, "is_mock": audio_mock,
         }) + "\n\n"
 
+    emotion = await emotion_task
     yield "data: " + json.dumps({
         "type": "done", "reply": full_reply, "scene": scene.value,
         "safety_flag": "ok", "is_mock": False,
         "request_id": request_id, "degraded": False,
+        "emotion": emotion,
     }) + "\n\n"
