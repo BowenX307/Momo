@@ -2,25 +2,65 @@
 
 import type { SynthesizeResponse } from "@/lib/api/momo";
 
-let currentAudio: HTMLAudioElement | null = null;
+// One reusable <audio> element, unlocked once inside a user gesture and then
+// reused (src swapped) for every chunk. This is the reliable iOS pattern:
+//  - HTMLAudioElement is "media" playback, so it survives the silent/ringer
+//    switch (Web Audio does NOT — it gets muted by the hardware switch);
+//  - once unlocked in a gesture, later programmatic play() is allowed;
+//  - it doesn't auto-suspend the way an AudioContext does between gesture and
+//    playback, so streaming chunks after the first don't get silently dropped.
+let _el: HTMLAudioElement | null = null;
+let _elTeardown: (() => void) | null = null;
 
-// Shared AudioContext pre-unlocked during a user gesture so subsequent
-// programmatic playback is allowed on iOS/Android.
-let _sharedCtx: AudioContext | null = null;
+// Built lazily: a short silent WAV used only to unlock the element in-gesture.
+let _silentUrl: string | null = null;
+
+function _ensureEl(): HTMLAudioElement {
+  if (!_el) {
+    _el = new Audio();
+    _el.setAttribute("playsinline", "");
+    _el.preload = "auto";
+  }
+  return _el;
+}
+
+function _silentWavUrl(): string {
+  if (_silentUrl) return _silentUrl;
+  const sampleRate = 8000;
+  const samples = 800; // ~0.1s
+  const buf = new ArrayBuffer(44 + samples);
+  const v = new DataView(buf);
+  const w = (off: number, s: string) => {
+    for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i));
+  };
+  w(0, "RIFF"); v.setUint32(4, 36 + samples, true); w(8, "WAVE");
+  w(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, sampleRate, true);
+  v.setUint32(28, sampleRate, true); v.setUint16(32, 1, true);
+  v.setUint16(34, 8, true); w(36, "data"); v.setUint32(40, samples, true);
+  for (let i = 0; i < samples; i++) v.setUint8(44 + i, 128); // 8-bit silence
+  _silentUrl = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+  return _silentUrl;
+}
 
 export function unlockAudio(): void {
   try {
-    if (!_sharedCtx || _sharedCtx.state === "closed") {
-      _sharedCtx = new AudioContext();
-    }
-    void _sharedCtx.resume();
+    const el = _ensureEl();
+    // Play a tiny silent clip inside the gesture so later programmatic src
+    // swaps + play() are allowed, and so playback survives the getUserMedia
+    // (recording) audio-session switch on iOS.
+    el.src = _silentWavUrl();
+    void el.play().catch(() => {});
   } catch { /* ignore */ }
 }
 
 export function stopMomoSpeech(): void {
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio = null;
+  if (_elTeardown) {
+    _elTeardown();
+    _elTeardown = null;
+  }
+  if (_el) {
+    try { _el.pause(); } catch { /* noop */ }
   }
   if (typeof window !== "undefined" && "speechSynthesis" in window) {
     window.speechSynthesis.cancel();
@@ -48,27 +88,62 @@ function _playOneChunk(base64: string, contentType: string): Promise<void> {
     const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
     const blob = new Blob([bytes], { type: contentType });
     const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    currentAudio = audio;
+    const el = _ensureEl();
+
+    // Tear down any listeners left by a previous (interrupted) chunk on this
+    // shared element before wiring up our own.
+    if (_elTeardown) { _elTeardown(); _elTeardown = null; }
 
     let settled = false;
+    let playStartedAt = 0;
+    let durationMs = 0;
+
+    const onMeta = () => { durationMs = (el.duration || 0) * 1000; };
+    const onPlay = () => { playStartedAt = Date.now(); };
+
+    const cleanup = () => {
+      el.removeEventListener("loadedmetadata", onMeta);
+      el.removeEventListener("play", onPlay);
+      el.onended = null;
+      el.onerror = null;
+      clearTimeout(failsafe);
+      setTimeout(() => URL.revokeObjectURL(url), 500);
+    };
+
     const done = () => {
       if (settled) return;
       settled = true;
-      clearTimeout(failsafe);
-      if (currentAudio === audio) currentAudio = null;
-      URL.revokeObjectURL(url);
+      if (_elTeardown === done) _elTeardown = null;
+      cleanup();
       resolve();
     };
 
-    // Safety net: resolve even if browser never fires audio events (common on mobile).
     const failsafe = setTimeout(done, 15_000);
+    // If a later chunk or stopMomoSpeech reuses the element, this resolves the
+    // current chunk's promise cleanly instead of leaving it hanging.
+    _elTeardown = done;
 
-    audio.onended = done;
-    audio.onerror = done;
-    // Avoid routing through AudioContext — createMediaElementSource causes onended
-    // to fire before audio finishes coming out of the speaker on mobile.
-    void audio.play().catch(done);
+    el.addEventListener("loadedmetadata", onMeta);
+    el.addEventListener("play", onPlay);
+    el.onended = () => {
+      // iOS/Safari fires onended when the buffer is exhausted, before audio has
+      // fully come out of the speaker. If we haven't reached the expected
+      // duration yet, wait out the remainder before resolving.
+      if (playStartedAt > 0 && durationMs > 100) {
+        const elapsed = Date.now() - playStartedAt;
+        const remaining = durationMs - elapsed + 150;
+        if (remaining > 80) {
+          setTimeout(done, remaining);
+          return;
+        }
+      }
+      done();
+    };
+    el.onerror = done;
+
+    el.src = url;
+    el.load();
+    void el.play().catch(done);
   });
 }
 

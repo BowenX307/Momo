@@ -41,6 +41,7 @@ class WhisperSTTProvider:
             "model": settings.whisper_model,
             "language": "zh",
             "response_format": "json",
+            "prompt": "以下是普通话口语对话。",
         }
         headers = {"Authorization": f"Bearer {settings.whisper_api_key}"}
         url = f"{settings.whisper_base_url.rstrip('/')}/audio/transcriptions"

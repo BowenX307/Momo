@@ -5,6 +5,7 @@
 
 import base64
 import json
+import re
 
 import httpx
 
@@ -15,6 +16,33 @@ _ENDPOINT = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
 _RESOURCE_ID = "seed-tts-2.0"
 
 _DEFAULT_RATE = -8  # range [-50, 100]
+
+_MIN_CLAUSE_LEN = 8   # 逗号两侧从句都要达到此长度才插停顿
+_MIN_TEXT_LEN = 20    # 短文本不处理
+
+
+def _with_natural_pauses(text: str) -> str:
+    """在长从句的逗号后插入 SSML break，只在两侧从句都够长时才停顿。"""
+    if len(text) < _MIN_TEXT_LEN:
+        return text
+    parts = re.split(r"([，,])", text)
+    out: list[str] = []
+    last_clause_len = 0
+    for chunk in parts:
+        if chunk in ("，", ","):
+            out.append(chunk)
+        else:
+            clause_len = len(chunk.strip())
+            if (
+                out
+                and out[-1] in ("，", ",")
+                and last_clause_len >= _MIN_CLAUSE_LEN
+                and clause_len >= _MIN_CLAUSE_LEN
+            ):
+                out.append('<break time="300ms"/>')
+            out.append(chunk)
+            last_clause_len = clause_len
+    return f'<speak>{"".join(out)}</speak>'
 
 
 class DoubaoTTSProvider:
@@ -35,7 +63,7 @@ class DoubaoTTSProvider:
         payload = {
             "user": {"uid": "momo"},
             "req_params": {
-                "text": stripped,
+                "text": _with_natural_pauses(stripped),
                 "speaker": settings.doubao_tts_voice,
                 "audio_params": {
                     "format": "mp3",
@@ -45,6 +73,7 @@ class DoubaoTTSProvider:
                 "additions": json.dumps({
                     "post_process": {"pitch": settings.doubao_tts_pitch},
                     "disable_markdown_filter": True,
+                    "enable_ssml": True,
                 }),
             },
         }

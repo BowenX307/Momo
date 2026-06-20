@@ -39,10 +39,12 @@ interface Props {
   onError?: (message: string) => void;
   onPhaseChange?: (phase: VoicePhase) => void;
   disabled?: boolean;
+  speaking?: boolean;
   startTrigger?: number;
   conversationActive?: boolean;
   onStartConversation?: () => void;
   onEndConversation?: () => void;
+  onInterruptSpeaking?: () => void;
 }
 
 type SttMode = "browser" | "backend";
@@ -74,6 +76,16 @@ interface BrowserSpeechRecognition {
   onresult: ((event: SpeechRecognitionResultEvent) => void) | null;
   onerror: ((event: { error: string }) => void) | null;
   onend: (() => void) | null;
+}
+
+function isIOS(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  // iPadOS 13+ reports as MacIntel but has a touch screen.
+  return (
+    /iP(hone|ad|od)/.test(ua) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
 }
 
 function getBrowserSpeechRecognition(): (new () => BrowserSpeechRecognition) | null {
@@ -125,10 +137,12 @@ export function VoiceInputButton({
   onError,
   onPhaseChange,
   disabled,
+  speaking,
   startTrigger,
   conversationActive,
   onStartConversation,
   onEndConversation,
+  onInterruptSpeaking,
 }: Props) {
   const [phase, setPhase] = useState<VoicePhase>("idle");
   const [sttMode, setSttMode] = useState<SttMode>("backend");
@@ -144,6 +158,13 @@ export function VoiceInputButton({
   const audioCtxRef = useRef<AudioContext | null>(null);
   const vadRafRef = useRef<number | null>(null);
   const stoppingRef = useRef(false);
+
+  // Barge-in: lightweight background VAD while AI is speaking
+  const bargeInStreamRef = useRef<MediaStream | null>(null);
+  const bargeInAudioCtxRef = useRef<AudioContext | null>(null);
+  const bargeInRafRef = useRef<number | null>(null);
+  const onInterruptSpeakingRef = useRef(onInterruptSpeaking);
+  onInterruptSpeakingRef.current = onInterruptSpeaking;
 
   const speechRef = useRef<BrowserSpeechRecognition | null>(null);
   const speechTranscriptRef = useRef("");
@@ -173,6 +194,82 @@ export function VoiceInputButton({
       });
   }, []);
 
+  const stopBargeIn = useCallback(() => {
+    if (bargeInRafRef.current !== null) {
+      cancelAnimationFrame(bargeInRafRef.current);
+      bargeInRafRef.current = null;
+    }
+    void bargeInAudioCtxRef.current?.close();
+    bargeInAudioCtxRef.current = null;
+    bargeInStreamRef.current?.getTracks().forEach((t) => t.stop());
+    bargeInStreamRef.current = null;
+  }, []);
+
+  const startBargeIn = useCallback(async () => {
+    if (bargeInStreamRef.current) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      bargeInStreamRef.current = stream;
+      const audioCtx = new AudioContext();
+      bargeInAudioCtxRef.current = audioCtx;
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      audioCtx.createMediaStreamSource(stream).connect(analyser);
+      const buf = new Uint8Array(analyser.fftSize) as Uint8Array<ArrayBuffer>;
+
+      const calStart = Date.now();
+      const calSamples: number[] = [];
+      let baseline = 8;
+      // Same threshold as regular VAD; echo cancellation handles the AI's own audio.
+      // Hysteresis: brief RMS dips (<150ms) don't reset the speech timer so natural
+      // speech fluctuations don't prevent the 400ms window from completing.
+      const BARGE_IN_OFFSET = SPEECH_OFFSET;
+      const BARGE_IN_MS = 400;
+      const BARGE_IN_SILENCE_RESET_MS = 150;
+      let speechStart: number | null = null;
+      let silenceStart: number | null = null;
+
+      const tick = () => {
+        if (!bargeInStreamRef.current) return;
+        const raw = measureRms(analyser, buf);
+        const now = Date.now();
+
+        if (now - calStart < 300) {
+          calSamples.push(raw);
+          bargeInRafRef.current = requestAnimationFrame(tick);
+          return;
+        }
+        if (calSamples.length > 0) {
+          baseline = calSamples.reduce((a, b) => a + b, 0) / calSamples.length;
+          calSamples.length = 0;
+        }
+
+        if (raw > baseline + BARGE_IN_OFFSET) {
+          silenceStart = null;
+          if (speechStart === null) speechStart = now;
+          else if (now - speechStart >= BARGE_IN_MS) {
+            stopBargeIn();
+            onInterruptSpeakingRef.current?.();
+            return;
+          }
+        } else {
+          if (silenceStart === null) {
+            silenceStart = now;
+          } else if (now - silenceStart >= BARGE_IN_SILENCE_RESET_MS) {
+            speechStart = null;
+          }
+        }
+
+        bargeInRafRef.current = requestAnimationFrame(tick);
+      };
+      bargeInRafRef.current = requestAnimationFrame(tick);
+    } catch {
+      // mic unavailable, ignore
+    }
+  }, [stopBargeIn]);
+
   const cleanupStream = useCallback(() => {
     if (vadRafRef.current !== null) {
       cancelAnimationFrame(vadRafRef.current);
@@ -199,8 +296,21 @@ export function VoiceInputButton({
       mediaRecorderRef.current?.stop();
       cleanupStream();
       cleanupSpeech();
+      stopBargeIn();
     };
-  }, [cleanupSpeech, cleanupStream]);
+  }, [cleanupSpeech, cleanupStream, stopBargeIn]);
+
+  // Barge-in: open background VAD whenever AI is speaking OR thinking (loading).
+  // Echo cancellation filters the AI's own audio so it won't self-trigger.
+  // NOT on iOS: opening the mic there switches the system to the VoIP audio
+  // session, which ducks/cuts the AI's playback. iOS relies on tap-to-interrupt.
+  useEffect(() => {
+    if (conversationActive && (speaking || disabled) && phase === "idle" && !isIOS()) {
+      void startBargeIn();
+    } else {
+      stopBargeIn();
+    }
+  }, [conversationActive, speaking, disabled, phase, startBargeIn, stopBargeIn]);
 
   const stopBackendRecording = useCallback(async () => {
     if (stoppingRef.current) return;
@@ -276,7 +386,13 @@ export function VoiceInputButton({
     stoppingRef.current = false;
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       streamRef.current = stream;
       const mime = pickMimeType();
       const recorder = mime
@@ -449,6 +565,12 @@ export function VoiceInputButton({
   const handleToggle = useCallback(() => {
     if (disabled || phase === "transcribing") return;
 
+    // AI 说话时点麦克风 → 打断并立刻开始录音
+    if (conversationActive && speaking && phase === "idle") {
+      onInterruptSpeaking?.();
+      return;
+    }
+
     if (conversationActive) {
       // 对话模式中点击 → 结束对话（强制停止录音，不走转写）
       if (phase === "recording") {
@@ -469,6 +591,7 @@ export function VoiceInputButton({
     }
   }, [
     conversationActive,
+    speaking,
     disabled,
     phase,
     sttMode,
@@ -476,6 +599,7 @@ export function VoiceInputButton({
     setPhaseAndNotify,
     onEndConversation,
     onStartConversation,
+    onInterruptSpeaking,
   ]);
 
   const isRecording = phase === "recording";

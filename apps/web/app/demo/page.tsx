@@ -165,10 +165,17 @@ export default function DemoPage() {
 
   async function handleSend(overrideText?: string) {
     const text = (overrideText ?? input).trim();
-    if (!text || loading) return;
 
+    // Always interrupt active speech/stream before anything else.
     abortRef.current?.abort();
     stopAudioQueue();
+    setSpeaking(false);
+
+    if (!text) {
+      setLoading(false);
+      return;
+    }
+
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
@@ -391,11 +398,19 @@ export default function DemoPage() {
         <div className="w-full max-w-md">
           <div className="flex items-end gap-2 rounded-2xl border border-stone-200 bg-white/70 p-2 focus-within:border-[#e88c6a] focus-within:bg-white dark:border-stone-800 dark:bg-stone-900/60 dark:focus-within:border-[#c66645] dark:focus-within:bg-stone-900">
             <VoiceInputButton
-              disabled={loading || speaking}
+              disabled={loading}
+              speaking={speaking}
               startTrigger={recordingTrigger}
               conversationActive={conversationActive}
               onStartConversation={handleStartConversation}
               onEndConversation={handleEndConversation}
+              onInterruptSpeaking={() => {
+                stopAudioQueue();
+                setSpeaking(false);
+                setLoading(false);
+                abortRef.current?.abort();
+                setRecordingTrigger((t) => t + 1);
+              }}
               onPhaseChange={setVoicePhase}
               onTranscript={(text) => void handleSend(text)}
               onError={setError}
@@ -406,16 +421,15 @@ export default function DemoPage() {
               onKeyDown={handleKeyDown}
               placeholder="说点什么，或点左边麦克风…"
               rows={1}
-              disabled={loading || speaking}
               className="flex-1 resize-none bg-transparent px-2 py-1.5 text-base leading-relaxed text-stone-900 placeholder-stone-400 outline-none disabled:opacity-60 dark:text-stone-100 dark:placeholder-stone-500"
             />
             <button
               type="button"
               onClick={() => void handleSend()}
-              disabled={loading || speaking || !input.trim()}
+              disabled={!input.trim() && !loading && !speaking}
               className="shrink-0 rounded-xl bg-[#d97757] px-3.5 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[#c66645] disabled:cursor-not-allowed disabled:bg-stone-300 dark:disabled:bg-stone-700"
             >
-              {loading ? "等一下" : "发送"}
+              {loading || speaking ? "打断" : "发送"}
             </button>
           </div>
         </div>
