@@ -63,7 +63,6 @@ const PERSONA_LABELS: Record<Persona, string> = {
   iris: "Iris",
   rocky: "Rocky",
 };
-const MAX_HISTORY_DISPLAY = 3;
 
 type ConvTurn = PersistedConvTurn;
 
@@ -93,6 +92,37 @@ export default function DemoPage() {
   const abortRef = useRef<AbortController | null>(null);
   const historyEndRef = useRef<HTMLDivElement | null>(null);
 
+  // 逐字渐显：语音每开一句把文字追加到 target，定时器让显示文字平滑追上 target。
+  const revealTargetRef = useRef("");
+  const revealShownRef = useRef(0);
+  const revealTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function stopReveal() {
+    if (revealTimerRef.current) {
+      clearInterval(revealTimerRef.current);
+      revealTimerRef.current = null;
+    }
+  }
+
+  function resetReveal() {
+    stopReveal();
+    revealTargetRef.current = "";
+    revealShownRef.current = 0;
+  }
+
+  function ensureReveal() {
+    if (revealTimerRef.current) return;
+    revealTimerRef.current = setInterval(() => {
+      const target = revealTargetRef.current;
+      if (revealShownRef.current >= target.length) {
+        stopReveal();
+        return;
+      }
+      revealShownRef.current = Math.min(target.length, revealShownRef.current + 1);
+      setReply(target.slice(0, revealShownRef.current));
+    }, 85);
+  }
+
   function handleStartConversation() {
     unlockAudio(); // must run inside user gesture to unblock iOS/Android autoplay
     conversationActiveRef.current = true;
@@ -110,7 +140,7 @@ export default function DemoPage() {
   }
 
   function handleClearSession() {
-    clearSession();
+    clearSession(persona);
     setHistory([]);
     setScene(null);
     setTurns([]);
@@ -123,24 +153,45 @@ export default function DemoPage() {
 
   function handlePersonaChange(next: Persona) {
     if (next === persona) return;
-    setPersona(next);
-    clearSession();
-    setHistory([]);
-    setScene(null);
-    setTurns([]);
-    setReply(PERSONA_GREETINGS[next]);
-    setReplyKey((k) => k + 1);
-    setRestoredAt(null);
-    setError(null);
-    setEmotion("");
+
+    // 先保存当前人格的会话，切回来时能恢复。
+    saveSession(persona, { history, scene, turns, savedAt: Date.now() });
+
+    // 停掉当前播放/请求/渐显。
     stopAudioQueue();
+    resetReveal();
     setSpeaking(false);
     abortRef.current?.abort();
     setLoading(false);
+    setError(null);
+    setEmotion("");
+
+    // 切换并加载目标人格自己的历史。
+    setPersona(next);
+    const saved = loadSession(next);
+    if (saved) {
+      setHistory(saved.history);
+      setScene(saved.scene);
+      setTurns(saved.turns);
+      setRestoredAt(saved.savedAt);
+      setReply(
+        saved.turns.length > 0
+          ? saved.turns[saved.turns.length - 1].reply
+          : PERSONA_GREETINGS[next],
+      );
+    } else {
+      setHistory([]);
+      setScene(null);
+      setTurns([]);
+      setRestoredAt(null);
+      setReply(PERSONA_GREETINGS[next]);
+    }
+    setReplyKey((k) => k + 1);
   }
 
   useEffect(() => {
-    const saved = loadSession();
+    // mount 时加载当前（初始）人格的会话。
+    const saved = loadSession(persona);
     if (saved) {
       setHistory(saved.history);
       setScene(saved.scene);
@@ -155,7 +206,9 @@ export default function DemoPage() {
     return () => {
       ctrl.abort();
       stopAudioQueue();
+      stopReveal();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function applyReply(text: string) {
@@ -169,6 +222,7 @@ export default function DemoPage() {
     // Always interrupt active speech/stream before anything else.
     abortRef.current?.abort();
     stopAudioQueue();
+    resetReveal();
     setSpeaking(false);
 
     if (!text) {
@@ -193,17 +247,41 @@ export default function DemoPage() {
     const capturedTurns = turns;
     const capturedScene = scene;
 
+    // 逐句显示：每句语音开播时把对应文字追加上去，文字与语音同步出现。
+    let streamedText = "";
+    let streamStarted = false;
+
     try {
       await fetchChatDemoStream(
         payload,
         {
           onAudio: (ev) => {
-            enqueueAudio(ev.audio_base64, ev.content_type, ev.is_mock);
+            enqueueAudio(ev.audio_base64, ev.content_type, ev.is_mock, () => {
+              // 旧后端不带 text 时跳过，回退到 onDone 一次性显示的旧行为。
+              if (ctrl.signal.aborted || !ev.text) return;
+              if (!streamStarted) {
+                streamStarted = true;
+                setLoading(false);
+                setSpeaking(true);
+                setReplyKey((k) => k + 1); // 只在第一句淡入一次
+              }
+              // 把这句文字加进目标，逐字渐显的定时器会平滑追上来。
+              streamedText += ev.text;
+              revealTargetRef.current = streamedText;
+              ensureReveal();
+            });
           },
           onDone: (ev) => {
             if (ctrl.signal.aborted) return;
 
-            applyReply(ev.reply);
+            // 已逐句显示则把目标补全为完整回复（逐字渐显继续走完）；
+            // 否则（mock/无音频）按旧行为淡入全文。
+            if (streamStarted) {
+              revealTargetRef.current = ev.reply;
+              ensureReveal();
+            } else {
+              applyReply(ev.reply);
+            }
             if (ev.scene !== capturedScene) setScene(ev.scene);
             if (ev.emotion) setEmotion(ev.emotion);
 
@@ -216,7 +294,7 @@ export default function DemoPage() {
 
             const nextTurns = [...capturedTurns, { userText: text, reply: ev.reply }];
             setTurns(nextTurns);
-            saveSession({ history: nextHistory, scene: ev.scene, turns: nextTurns, savedAt: Date.now() });
+            saveSession(persona, { history: nextHistory, scene: ev.scene, turns: nextTurns, savedAt: Date.now() });
             setRestoredAt(null);
 
             setLastResponse({
@@ -277,8 +355,8 @@ export default function DemoPage() {
   const safetyFlag = lastResponse?.safety_flag;
   const degraded = lastResponse?.degraded ?? false;
 
-  // 最近几轮（不含当前回复）
-  const recentTurns = turns.slice(-(MAX_HISTORY_DISPLAY + 1), -1);
+  // 全部历史轮次（不含当前回复，当前回复在下方作为主焦点展示）
+  const recentTurns = turns.slice(0, -1);
 
   return (
     <div className="relative flex min-h-dvh flex-1 flex-col bg-[#faf6f0] text-stone-900 dark:bg-[#1a1612] dark:text-stone-100">

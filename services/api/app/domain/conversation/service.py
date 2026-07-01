@@ -264,7 +264,7 @@ async def stream_chat_demo(
                     sentence, scene, tts_provider, tts_is_mock, request_id
                 )
             yield "data: " + json.dumps({
-                "type": "audio", "index": sentence_idx,
+                "type": "audio", "index": sentence_idx, "text": sentence,
                 "audio_base64": audio_b64, "content_type": audio_ct, "is_mock": audio_mock,
             }) + "\n\n"
             sentence_idx += 1
@@ -287,7 +287,7 @@ async def stream_chat_demo(
                 full_reply, scene, tts_provider, tts_is_mock, request_id
             )
         yield "data: " + json.dumps({
-            "type": "audio", "index": 0,
+            "type": "audio", "index": 0, "text": full_reply,
             "audio_base64": audio_b64, "content_type": audio_ct, "is_mock": audio_mock,
         }) + "\n\n"
 

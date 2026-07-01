@@ -204,6 +204,8 @@ export async function fetchSynthesize(
 export interface StreamAudioEvent {
   type: "audio";
   index: number;
+  /** 该句对应的文字，前端用它随语音逐句显示。旧后端可能不带此字段。 */
+  text?: string;
   audio_base64: string;
   content_type: string;
   is_mock: boolean;

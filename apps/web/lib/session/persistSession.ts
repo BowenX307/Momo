@@ -1,9 +1,14 @@
-import type { HistoryMessage, Scene } from "@/lib/api/momo";
+import type { HistoryMessage, Persona, Scene } from "@/lib/api/momo";
 
-const KEY = "momo:session";
+// 会话按人格分键存储，切换人格时各自保留历史。
+const KEY_PREFIX = "momo:session:";
 const TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_TURNS = 10;
 const MAX_MSG_LEN = 500;
+
+function keyFor(persona: Persona): string {
+  return `${KEY_PREFIX}${persona}`;
+}
 
 export interface ConvTurn {
   userText: string;
@@ -17,14 +22,14 @@ export interface PersistedSession {
   savedAt: number;
 }
 
-export function loadSession(): PersistedSession | null {
+export function loadSession(persona: Persona): PersistedSession | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(keyFor(persona));
     if (!raw) return null;
     const session = JSON.parse(raw) as PersistedSession;
     if (Date.now() - session.savedAt > TTL_MS) {
-      localStorage.removeItem(KEY);
+      localStorage.removeItem(keyFor(persona));
       return null;
     }
     return session;
@@ -33,7 +38,7 @@ export function loadSession(): PersistedSession | null {
   }
 }
 
-export function saveSession(session: PersistedSession): void {
+export function saveSession(persona: Persona, session: PersistedSession): void {
   if (typeof window === "undefined") return;
   try {
     const trimmedHistory = session.history.slice(-MAX_TURNS * 2).map((m) => ({
@@ -45,7 +50,7 @@ export function saveSession(session: PersistedSession): void {
       reply: t.reply.slice(0, MAX_MSG_LEN),
     }));
     localStorage.setItem(
-      KEY,
+      keyFor(persona),
       JSON.stringify({ ...session, history: trimmedHistory, turns: trimmedTurns }),
     );
   } catch {
@@ -53,9 +58,9 @@ export function saveSession(session: PersistedSession): void {
   }
 }
 
-export function clearSession(): void {
+export function clearSession(persona: Persona): void {
   if (typeof window === "undefined") return;
-  localStorage.removeItem(KEY);
+  localStorage.removeItem(keyFor(persona));
 }
 
 export function formatRelativeTime(savedAt: number): string {

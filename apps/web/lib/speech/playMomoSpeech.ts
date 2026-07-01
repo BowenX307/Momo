@@ -171,12 +171,19 @@ let _queueGen = 0;
 let _tail: Promise<void> = Promise.resolve();
 let _hadRealAudio = false;
 
-export function enqueueAudio(base64: string, contentType: string, isMock: boolean): void {
+export function enqueueAudio(
+  base64: string,
+  contentType: string,
+  isMock: boolean,
+  onStart?: () => void,
+): void {
   if (!base64 || isMock) return;
   _hadRealAudio = true;
   const myGen = _queueGen;
   _tail = _tail.then(async () => {
     if (_queueGen !== myGen) return;
+    // 在这句音频真正开始播放的时刻触发，用于同步显示对应文字。
+    onStart?.();
     await _playOneChunk(base64, contentType);
   });
 }

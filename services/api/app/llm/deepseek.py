@@ -131,9 +131,21 @@ _PERSONAS: dict[str, str] = {
     "rocky": _ROCKY_PERSONA,
 }
 
+# 每个人格独立的采样温度，后续可在这里逐个调试。
+_DEFAULT_TEMPERATURE = 0.72
+_PERSONA_TEMPERATURE: dict[str, float] = {
+    "momo": 0.72,
+    "iris": 0.75,
+    "rocky": 0.72,
+}
+
 
 def _system_prompt_for(persona: str) -> str:
     return _PERSONAS.get(persona, _MOMO_PERSONA)
+
+
+def _temperature_for(persona: str) -> float:
+    return _PERSONA_TEMPERATURE.get(persona, _DEFAULT_TEMPERATURE)
 
 
 class DeepSeekProvider:
@@ -154,7 +166,7 @@ class DeepSeekProvider:
         payload = {
             "model": settings.deepseek_model,
             "messages": messages,
-            "temperature": 0.72,
+            "temperature": _temperature_for(persona),
             "top_p": 0.9,
             "frequency_penalty": 0.4,
             "presence_penalty": 0.3,
@@ -205,7 +217,7 @@ class DeepSeekProvider:
         payload = {
             "model": settings.deepseek_model,
             "messages": messages,
-            "temperature": 0.72,
+            "temperature": _temperature_for(persona),
             "top_p": 0.9,
             "frequency_penalty": 0.4,
             "presence_penalty": 0.3,
