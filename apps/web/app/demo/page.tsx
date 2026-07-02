@@ -70,9 +70,9 @@ export default function DemoPage() {
   // scene 由后端在第一句话上自动分类；此后整个会话都沿用，不再每轮重判。
   // null = 第一句话还没发过 / 用户尚未"开口定调"。
   const [scene, setScene] = useState<Scene | null>(null);
-  const [persona, setPersona] = useState<Persona>("momo");
+  const [persona, setPersona] = useState<Persona>("rocky");
   const [input, setInput] = useState("");
-  const [reply, setReply] = useState<string>(PERSONA_GREETINGS.momo);
+  const [reply, setReply] = useState<string>(PERSONA_GREETINGS.rocky);
   const [replyKey, setReplyKey] = useState(0);
   const [loading, setLoading] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -382,11 +382,12 @@ export default function DemoPage() {
         <div>
           <h1 className="text-lg font-medium tracking-tight">{PERSONA_LABELS[persona]}</h1>
           <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
-            {persona === "momo" ? "我一直在。" : persona === "iris" ? "有什么就说。" : "先把问题变小。"}
+            {persona === "iris" ? "有什么就说。" : "先把问题变小。"}
           </p>
         </div>
         <div className="flex gap-1 rounded-xl bg-stone-100 p-1 dark:bg-stone-800">
-          {(["momo", "iris", "rocky"] as Persona[]).map((p) => (
+          {/* momo 已下线(保留为最初人格),不再作为可选项 */}
+          {(["iris", "rocky"] as Persona[]).map((p) => (
             <button
               key={p}
               type="button"

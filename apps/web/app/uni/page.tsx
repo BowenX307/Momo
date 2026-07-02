@@ -2,7 +2,6 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { Menu } from "./_components/Menu";
-import { Reveal } from "./_components/Reveal";
 
 /**
  * /uni —— 招商 / 展示 landing page。
@@ -123,7 +122,7 @@ export default function UniLanding() {
         {/* CTA:外层做入场动画,内层 Link 控制静止透明度(父子 opacity 相乘) */}
         <div className="uni-rise mt-5" style={{ animationDelay: "900ms" }}>
           <Link
-            href="/demo"
+            href="/uni/chat"
             className="group font-hand relative inline-flex flex-col items-center text-[26px] text-[#504437] opacity-70 transition hover:text-[#c2555e] hover:opacity-100"
             style={{ filter: "url(#crayon)" }}
           >
@@ -146,111 +145,6 @@ export default function UniLanding() {
         </div>
         </section>
 
-        {/* 信息段 1:像真人一样陪你说话(Tolan 式两栏 + 暖白纸卡,蜡笔风) */}
-        <section className="relative mx-auto max-w-5xl px-6 py-28 sm:py-36">
-          <div className="grid items-center gap-10 sm:grid-cols-2 sm:gap-16">
-            <Reveal className="flex flex-col gap-5">
-              <h2 className="font-hand text-3xl leading-snug text-[#504437] sm:text-4xl">
-                像真人一样，
-                <br />
-                陪你说话
-              </h2>
-              <p className="font-hand text-lg leading-relaxed text-[#504437]/75">
-                不是一问一答的机器。它用声音陪你，会停顿，也能被打断，像朋友一样把话接住。
-              </p>
-            </Reveal>
-
-            <Reveal delay={150}>
-              {/* 暖白纸卡:比底色更亮、更白,装一段真实对话 */}
-              <div className="rounded-2xl bg-[#faf6ec] p-6 shadow-[0_10px_34px_rgba(120,100,70,0.10)] sm:p-7">
-                <div className="flex flex-col gap-3 font-hand text-[#504437]">
-                  <span className="max-w-[82%] self-end rounded-2xl rounded-br-md bg-[#efe7d6] px-4 py-2 text-base leading-relaxed">
-                    最近好累，又不想跟谁说。
-                  </span>
-                  <span className="max-w-[86%] self-start rounded-2xl rounded-bl-md bg-[#f3ede0] px-4 py-2 text-base leading-relaxed">
-                    嗯，那就先不说。我陪你坐一会儿。
-                  </span>
-                </div>
-              </div>
-            </Reveal>
-          </div>
-        </section>
-
-        {/* 信息段 2:三个人格 —— 标题 + 三张交错的纸卡(内容各异,非雷同卡) */}
-        <section className="relative mx-auto max-w-5xl px-6 py-24 sm:py-28">
-          <Reveal>
-            <h2 className="font-hand text-3xl leading-snug text-[#504437] sm:text-4xl">
-              想要哪种陪伴，你说了算
-            </h2>
-            <p className="mt-4 max-w-xl font-hand text-lg leading-relaxed text-[#504437]/75">
-              三个性格，住在你的小世界里。换一个，就像换一种被陪着的方式。
-            </p>
-          </Reveal>
-          <div className="mt-12 grid gap-6 sm:grid-cols-3">
-            <Reveal delay={120}>
-              <div className="rounded-2xl bg-[#faf6ec] p-6 shadow-[0_10px_34px_rgba(120,100,70,0.10)]">
-                <div className="font-uni text-3xl text-[#d66e76]">momo</div>
-                <div className="mt-1 font-hand text-sm text-[#504437]/55">温柔派</div>
-                <p className="mt-3 font-hand text-base leading-relaxed text-[#504437]/85">
-                  不评判，稳稳接住你。
-                </p>
-              </div>
-            </Reveal>
-            <Reveal delay={220} className="sm:mt-8">
-              <div className="rounded-2xl bg-[#faf6ec] p-6 shadow-[0_10px_34px_rgba(120,100,70,0.10)]">
-                <div className="font-uni text-3xl text-[#d66e76]">iris</div>
-                <div className="mt-1 font-hand text-sm text-[#504437]/55">直接派</div>
-                <p className="mt-3 font-hand text-base leading-relaxed text-[#504437]/85">
-                  不灌鸡汤，嘴硬心软。
-                </p>
-              </div>
-            </Reveal>
-            <Reveal delay={320} className="sm:mt-4">
-              <div className="rounded-2xl bg-[#faf6ec] p-6 shadow-[0_10px_34px_rgba(120,100,70,0.10)]">
-                <div className="font-uni text-3xl text-[#d66e76]">rocky</div>
-                <div className="mt-1 font-hand text-sm text-[#504437]/55">行动派</div>
-                <p className="mt-3 font-hand text-base leading-relaxed text-[#504437]/85">
-                  把难题拆小，陪你迈第一步。
-                </p>
-              </div>
-            </Reveal>
-          </div>
-        </section>
-
-        {/* 信息段 3:专业背书 —— 居中一张引用卡。⚠️ 引用与署名是占位,必须换成真人真话 */}
-        <section className="relative mx-auto max-w-3xl px-6 py-24 text-center sm:py-28">
-          <Reveal>
-            <h2 className="font-hand text-3xl leading-snug text-[#504437] sm:text-4xl">
-              和专业的人一起做
-            </h2>
-            <p className="mx-auto mt-4 max-w-xl font-hand text-lg leading-relaxed text-[#504437]/75">
-              uni 的陪伴方式，和专业心理咨询师一起打磨：知道什么时候接住，什么时候退一步，绝不替代治疗。
-            </p>
-            <div className="mx-auto mt-10 max-w-xl rounded-2xl bg-[#faf6ec] p-7 text-left shadow-[0_10px_34px_rgba(120,100,70,0.10)] sm:p-8">
-              <p className="font-hand text-xl leading-relaxed text-[#504437]">
-                （待填：心理咨询师对 uni 的一句背书。）
-              </p>
-              <div className="mt-4 font-hand text-sm text-[#504437]/60">
-                （姓名 · 职称 · 机构）
-              </div>
-            </div>
-          </Reveal>
-        </section>
-
-        {/* 信息段 4:研发 —— 文字为主的编辑式,顺带亮出"反光滑"的态度 */}
-        <section className="relative mx-auto max-w-3xl px-6 py-24 sm:py-32">
-          <Reveal className="flex flex-col gap-6">
-            <h2 className="font-hand text-3xl leading-snug text-[#504437] sm:text-4xl">
-              真正的功夫，在模型之上
-            </h2>
-            <p className="font-hand text-lg leading-relaxed text-[#504437]/80">
-              我们站在最好的 AI 模型上，但难的从来不是模型。难的是我们加在上面的那一层：让 uni 怎么听、怎么回应、什么时候该打断，什么时候只是安静陪着。
-            </p>
-            <p className="font-hand text-lg leading-relaxed text-[#504437]/80">
-              在一个越来越光滑的 AI 世界里，我们想做一个有手感、会克制、像人一样的陪伴。
-            </p>
-          </Reveal>
-        </section>
       </main>
     </div>
   );

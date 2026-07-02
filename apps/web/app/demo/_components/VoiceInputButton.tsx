@@ -10,7 +10,7 @@
  * 4. 用户也可手动再点一次结束
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { fetchHealth, fetchTranscribe, MomoApiError } from "@/lib/api/momo";
 
@@ -45,6 +45,12 @@ interface Props {
   onStartConversation?: () => void;
   onEndConversation?: () => void;
   onInterruptSpeaking?: () => void;
+  /** 覆盖 idle 态图标(默认麦克风)。 */
+  idleIcon?: ReactNode;
+  /** 覆盖按钮样式(不传则用默认)。 */
+  className?: string;
+  /** 是否显示录音时的静音倒计时环(默认显示)。 */
+  showSilenceRing?: boolean;
 }
 
 type SttMode = "browser" | "backend";
@@ -143,6 +149,9 @@ export function VoiceInputButton({
   onStartConversation,
   onEndConversation,
   onInterruptSpeaking,
+  idleIcon,
+  className,
+  showSilenceRing = true,
 }: Props) {
   const [phase, setPhase] = useState<VoicePhase>("idle");
   const [sttMode, setSttMode] = useState<SttMode>("backend");
@@ -621,13 +630,18 @@ export function VoiceInputButton({
         }
         disabled={isBusy}
         onClick={handleToggle}
-        className={[
-          "inline-flex h-9 w-9 items-center justify-center rounded-xl border transition-colors",
-          "disabled:cursor-not-allowed disabled:opacity-60",
-          isConversing
-            ? "border-[#c0392b] bg-[#fdeee8] text-[#c0392b] ring-2 ring-[#f3d4c3]"
-            : "border-stone-200 bg-white text-stone-500 hover:bg-stone-50 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-400 dark:hover:bg-stone-800",
-        ].join(" ")}
+        className={
+          className
+            ? "inline-flex h-9 w-9 items-center justify-center rounded-xl transition-colors disabled:cursor-not-allowed disabled:opacity-60 " +
+              className
+            : [
+                "inline-flex h-9 w-9 items-center justify-center rounded-xl border transition-colors",
+                "disabled:cursor-not-allowed disabled:opacity-60",
+                isConversing
+                  ? "border-[#c0392b] bg-[#fdeee8] text-[#c0392b] ring-2 ring-[#f3d4c3]"
+                  : "border-stone-200 bg-white text-stone-500 hover:bg-stone-50 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-400 dark:hover:bg-stone-800",
+              ].join(" ")
+        }
       >
         {isTranscribing ? (
           <span className="h-3 w-3 animate-pulse rounded-full bg-[#d97757]" />
@@ -638,6 +652,8 @@ export function VoiceInputButton({
               hasSpeech ? "animate-pulse" : "",
             ].join(" ")}
           />
+        ) : idleIcon ? (
+          idleIcon
         ) : (
           <svg
             width="16"
@@ -657,7 +673,7 @@ export function VoiceInputButton({
         )}
       </button>
       {/* 静音倒计时环：说完后圆点逐渐填满 */}
-      {isRecording && hasSpeech && silenceProgress > 0 && (
+      {showSilenceRing && isRecording && hasSpeech && silenceProgress > 0 && (
         <span
           className="absolute -bottom-1 h-1 w-7 overflow-hidden rounded-full bg-stone-200"
           aria-hidden="true"
