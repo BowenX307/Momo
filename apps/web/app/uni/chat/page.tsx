@@ -68,6 +68,57 @@ const GRAIN =
 const GRAIN_FINE =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.7'/%3E%3C/svg%3E\")";
 
+// ── 拍立得 Aftercare ──────────────────────────────────────────────
+// "uni 给你拍了张照":点相机 → 一张宽幅拍立得摇出。正面 POV 自拍(按情绪变),
+// 背面手写(金句 + uni 这边同时发生的事 + 署名 + 时间戳)。demo 阶段 hardcode,
+// 情绪档可手动左右切换。TODO(素材):front 图先用现有形象占位,待换成情绪自拍图。
+type Mood = {
+  key: string;
+  label: string;
+  img: string; // TODO 换成情绪专属 POV 自拍(扮鬼脸/比心/安静朝你笑…)
+  caption: string; // 正面白边下的手写小字
+  quote: string; // 背面金句(\n 换行)
+};
+const MOODS: Mood[] = [
+  {
+    key: "down",
+    label: "有点低落",
+    img: "/uni/polaroid-down.png",
+    caption: "今天有点重，对吧。",
+    quote: "不是所有问题都要今晚解决，\n今晚的任务，只是好好活到明天。",
+  },
+  {
+    key: "anxious",
+    label: "有点焦虑",
+    img: "/uni/polaroid-anxious.png",
+    caption: "脑子转太快了，先停一下。",
+    quote: "今日份 CPU 过热，\n先关机散热十分钟。",
+  },
+  {
+    key: "calm",
+    label: "很平静",
+    img: "/uni/polaroid-calm.png",
+    caption: "这样，就很好。",
+    quote: "你今天已经做得够多了，\n剩下的，交给明天。",
+  },
+];
+
+// 每个形象的生活背景设定:署名 + "我这边同时发生的事"(把你的时刻嵌进 ta 的世界)
+const PERSONA_LIFE: Record<Persona, { sign: string; world: string }> = {
+  momo: { sign: "momo", world: "你在深夜里发呆的时候，我这边刚泡好今早的第一杯茶。" },
+  iris: { sign: "Iris", world: "你皱着眉的时候，我这边刚下过一场短雨，窗台上还挂着水珠。" },
+  rocky: { sign: "Rocky", world: "你发着呆的时候，我在山脚下把炉子生上了，火正慢慢旺起来。" },
+};
+
+function makeStamp() {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  const h = d.getHours();
+  const flavor =
+    h < 5 ? "凌晨" : h < 11 ? "清晨" : h < 14 ? "午后" : h < 18 ? "傍晚" : h < 23 ? "夜里" : "深夜";
+  return { date: `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())}`, flavor };
+}
+
 export default function UniChatPage() {
   const [scene, setScene] = useState<Scene | null>(null);
   const [persona, setPersona] = useState<Persona>("rocky");
@@ -80,6 +131,11 @@ export default function UniChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [pendingUser, setPendingUser] = useState("");
+  // 拍立得 aftercare
+  const [showPolaroid, setShowPolaroid] = useState(false);
+  const [moodIndex, setMoodIndex] = useState(0);
+  const [flipped, setFlipped] = useState(false);
+  const [stamp, setStamp] = useState<{ date: string; flavor: string }>({ date: "", flavor: "" });
   const [history, setHistory] = useState<HistoryMessage[]>([]);
   const [turns, setTurns] = useState<ConvTurn[]>([]);
   const [recordingTrigger, setRecordingTrigger] = useState(0);
@@ -324,6 +380,22 @@ export default function UniChatPage() {
         .font-kid  { font-family: 'Patrick Hand', cursive; }
         @keyframes uni-fade-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         .uni-fade-in { animation: uni-fade-in 420ms ease-out both; }
+
+        /* 拍立得:摇出入场 + 3D 翻面 + 快门闪光 */
+        .pol-scene { perspective: 1400px; }
+        @keyframes pol-in { 0% { opacity: 0; transform: translateY(-28px); } 100% { opacity: 1; transform: translateY(0); } }
+        .pol-in { animation: pol-in 640ms cubic-bezier(0.16,1,0.3,1) both; }
+        .pol-card { transform-style: preserve-3d; transition: transform 660ms cubic-bezier(0.2,0.75,0.2,1); transform: rotateZ(-2deg); }
+        .pol-card.flipped { transform: rotateZ(-2deg) rotateY(180deg); }
+        .pol-face { -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+        .pol-back { transform: rotateY(180deg); }
+        @keyframes pol-flash { 0% { opacity: 0; } 10% { opacity: .85; } 100% { opacity: 0; } }
+        .pol-flash { animation: pol-flash 520ms ease-out both; }
+        @media (prefers-reduced-motion: reduce) {
+          .pol-in { animation: none; }
+          .pol-card { transition: none; }
+          .pol-flash { animation: none; opacity: 0; }
+        }
       `}</style>
 
       {/* 纸张颗粒 */}
@@ -439,7 +511,9 @@ export default function UniChatPage() {
                 className="text-[#504437]/70 hover:text-[#d66e76]"
                 idleIcon={
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                    <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5c-1.3 0-2.5-.3-3.6-.8L3 21l1.8-5.9c-.5-1.1-.8-2.3-.8-3.6a8.5 8.5 0 0 1 17 0Z" />
+                    <rect x="9" y="3" width="6" height="11" rx="3" />
+                    <path d="M5 11a7 7 0 0 0 14 0" />
+                    <line x1="12" y1="18" x2="12" y2="21.5" />
                   </svg>
                 }
               />
@@ -452,6 +526,22 @@ export default function UniChatPage() {
                 <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                   <path d="M12 20h9" />
                   <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setStamp(makeStamp());
+                  setMoodIndex(0);
+                  setFlipped(false);
+                  setShowPolaroid(true);
+                }}
+                aria-label="uni 给你拍张照"
+                className="flex h-9 w-9 shrink-0 items-center justify-center text-[#504437]/70 transition-colors hover:text-[#d66e76]"
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M4 8.5h3l1.4-2h7.2L17 8.5h3a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1Z" />
+                  <circle cx="12" cy="13" r="3.2" />
                 </svg>
               </button>
               </div>
@@ -573,6 +663,102 @@ export default function UniChatPage() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 拍立得 aftercare:相机点开,POV 自拍 + 翻面手写话,情绪档可左右切 */}
+      {showPolaroid && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-6">
+          {/* 压暗背景,点击收起 */}
+          <button
+            type="button"
+            aria-label="收起"
+            onClick={() => setShowPolaroid(false)}
+            className="absolute inset-0 cursor-default bg-[#3a2f26]/45 backdrop-blur-[2px]"
+          />
+          {/* 快门闪光:只在打开时闪一次,切情绪档不闪 */}
+          <div className="pol-flash pointer-events-none absolute inset-0 z-20 bg-white" />
+
+          <div className="relative z-10 flex w-[420px] max-w-[86vw] flex-col items-center">
+            {/* 拍立得卡片 */}
+            <div className="pol-in pol-scene w-full">
+              <div
+                className={`pol-card relative w-full cursor-pointer select-none ${flipped ? "flipped" : ""}`}
+                style={{ aspectRatio: "420 / 330" }}
+                onClick={() => setFlipped((f) => !f)}
+              >
+                {/* 正面:POV 自拍 */}
+                <div className="pol-face absolute inset-0 flex flex-col rounded-[7px] bg-[#fbf7ee] p-3 pb-0 shadow-[0_22px_55px_rgba(60,45,30,0.4)]">
+                  <div className="relative flex-1 overflow-hidden bg-[#ece2cd]">
+                    <Image src={MOODS[moodIndex].img} alt="uni" fill sizes="420px" className="object-cover" />
+                    <div
+                      className="pointer-events-none absolute inset-0"
+                      style={{ backgroundImage: GRAIN_FINE, backgroundSize: "140px 140px", opacity: 0.35, mixBlendMode: "multiply" }}
+                    />
+                  </div>
+                  <div className="flex h-[62px] shrink-0 items-center justify-between px-1.5">
+                    <span className="font-hand text-lg text-[#504437]/85" style={{ filter: "url(#crayon-soft)" }}>
+                      {MOODS[moodIndex].caption}
+                    </span>
+                    <span className="font-uni text-xl text-[#504437]/45">{stamp.date}</span>
+                  </div>
+                </div>
+
+                {/* 背面:uni 写给你的话 */}
+                <div className="pol-face pol-back absolute inset-0 flex flex-col rounded-[7px] bg-[#fbf7ee] p-6 shadow-[0_22px_55px_rgba(60,45,30,0.4)]">
+                  <div
+                    className="pointer-events-none absolute inset-0 rounded-[7px]"
+                    style={{ backgroundImage: GRAIN_FINE, backgroundSize: "140px 140px", opacity: 0.4, mixBlendMode: "multiply" }}
+                  />
+                  <div className="relative z-10 flex h-full flex-col">
+                    <p className="whitespace-pre-line font-hand text-xl leading-relaxed text-[#504437]" style={{ filter: "url(#crayon-soft)" }}>
+                      {MOODS[moodIndex].quote}
+                    </p>
+                    <svg className="my-4 h-[8px] w-24" viewBox="0 0 120 8" preserveAspectRatio="none" fill="none" aria-hidden>
+                      <path d="M2 5 Q 30 1 60 4 T 118 4" stroke="#d66e76" strokeOpacity="0.6" strokeWidth="2.4" strokeLinecap="round" />
+                    </svg>
+                    <p className="font-hand text-[15px] leading-relaxed text-[#504437]/65">
+                      {PERSONA_LIFE[persona].world}
+                    </p>
+                    <div className="mt-auto flex items-end justify-between pt-4">
+                      <span className="font-uni text-3xl text-[#d66e76]" style={{ filter: "url(#crayon-soft)" }}>
+                        {PERSONA_LIFE[persona].sign}
+                      </span>
+                      <span className="font-hand text-xs text-[#504437]/45">
+                        {stamp.date} · {stamp.flavor}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 情绪档切换 */}
+            <div className="pol-in mt-6 flex items-center gap-6" style={{ animationDelay: "120ms" }}>
+              <button
+                type="button"
+                aria-label="上一张"
+                onClick={() => { setMoodIndex((i) => (i + MOODS.length - 1) % MOODS.length); setFlipped(false); }}
+                className="flex h-9 w-9 items-center justify-center text-[#f0e7d6]/80 transition hover:text-white"
+                style={{ filter: "url(#crayon-soft)" }}
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 5l-7 7 7 7" /></svg>
+              </button>
+              <span className="min-w-[72px] text-center font-hand text-lg text-[#f0e7d6]">{MOODS[moodIndex].label}</span>
+              <button
+                type="button"
+                aria-label="下一张"
+                onClick={() => { setMoodIndex((i) => (i + 1) % MOODS.length); setFlipped(false); }}
+                className="flex h-9 w-9 items-center justify-center text-[#f0e7d6]/80 transition hover:text-white"
+                style={{ filter: "url(#crayon-soft)" }}
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 5l7 7-7 7" /></svg>
+              </button>
+            </div>
+            <p className="pol-in mt-3 text-center font-hand text-sm text-[#f0e7d6]/55" style={{ animationDelay: "200ms" }}>
+              点卡片翻面 · 点空白处收起
+            </p>
           </div>
         </div>
       )}
