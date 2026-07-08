@@ -209,7 +209,9 @@ class DeepSeekProvider:
         persona: str = "momo",
     ) -> AsyncGenerator[str, None]:
         """流式输出 token，逐个 yield。"""
-        messages: list[dict] = [{"role": "system", "content": _system_prompt_for(persona)}]
+        messages: list[dict] = [
+            {"role": "system", "content": _system_prompt_for(persona)}
+        ]
         if history:
             messages.extend(history)
         messages.append({"role": "user", "content": user_text})
@@ -231,8 +233,12 @@ class DeepSeekProvider:
         url = f"{settings.deepseek_base_url}/chat/completions"
 
         try:
-            async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
-                async with client.stream("POST", url, headers=headers, json=payload) as response:
+            async with httpx.AsyncClient(
+                timeout=settings.llm_timeout_seconds
+            ) as client:
+                async with client.stream(
+                    "POST", url, headers=headers, json=payload
+                ) as response:
                     if response.status_code != 200:
                         await response.aread()
                         raise LLMError(

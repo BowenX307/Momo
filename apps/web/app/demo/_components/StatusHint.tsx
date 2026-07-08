@@ -22,7 +22,12 @@ interface Props {
 
 function pickVariant({ safetyFlag, degraded, error }: Props): Variant {
   if (error) return "error";
-  if (safetyFlag === "crisis_keyword") return "crisis";
+  if (
+    safetyFlag === "crisis_keyword" ||
+    safetyFlag === "aliyun_keyword" ||
+    safetyFlag === "blocked_keyword"
+  )
+    return "crisis";
   if (degraded) return "degraded";
   return null;
 }

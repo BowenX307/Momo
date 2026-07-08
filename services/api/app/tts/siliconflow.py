@@ -50,7 +50,9 @@ class SiliconFlowTTSProvider:
         url = f"{settings.whisper_base_url.rstrip('/')}/audio/speech"
 
         try:
-            async with httpx.AsyncClient(timeout=settings.tts_timeout_seconds) as client:
+            async with httpx.AsyncClient(
+                timeout=settings.tts_timeout_seconds
+            ) as client:
                 response = await client.post(url, headers=headers, json=payload)
         except httpx.TimeoutException as exc:
             raise TTSError("timeout", f"siliconflow tts timeout: {exc}") from exc

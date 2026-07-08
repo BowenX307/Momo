@@ -17,8 +17,8 @@ _RESOURCE_ID = "seed-tts-2.0"
 
 _DEFAULT_RATE = -8  # range [-50, 100]
 
-_MIN_CLAUSE_LEN = 8   # 逗号两侧从句都要达到此长度才插停顿
-_MIN_TEXT_LEN = 20    # 短文本不处理
+_MIN_CLAUSE_LEN = 8  # 逗号两侧从句都要达到此长度才插停顿
+_MIN_TEXT_LEN = 20  # 短文本不处理
 
 
 def _with_natural_pauses(text: str) -> str:
@@ -42,7 +42,7 @@ def _with_natural_pauses(text: str) -> str:
                 out.append('<break time="300ms"/>')
             out.append(chunk)
             last_clause_len = clause_len
-    return f'<speak>{"".join(out)}</speak>'
+    return f"<speak>{''.join(out)}</speak>"
 
 
 class DoubaoTTSProvider:
@@ -70,11 +70,13 @@ class DoubaoTTSProvider:
                     "sample_rate": 24000,
                     "speech_rate": speech_rate,
                 },
-                "additions": json.dumps({
-                    "post_process": {"pitch": settings.doubao_tts_pitch},
-                    "disable_markdown_filter": True,
-                    "enable_ssml": True,
-                }),
+                "additions": json.dumps(
+                    {
+                        "post_process": {"pitch": settings.doubao_tts_pitch},
+                        "disable_markdown_filter": True,
+                        "enable_ssml": True,
+                    }
+                ),
             },
         }
         headers = {
@@ -84,7 +86,9 @@ class DoubaoTTSProvider:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=settings.tts_timeout_seconds) as client:
+            async with httpx.AsyncClient(
+                timeout=settings.tts_timeout_seconds
+            ) as client:
                 response = await client.post(_ENDPOINT, headers=headers, json=payload)
         except httpx.TimeoutException as exc:
             raise TTSError("timeout", f"doubao tts timeout: {exc}") from exc

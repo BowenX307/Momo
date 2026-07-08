@@ -49,8 +49,8 @@ async def test_deepseek_complete_returns_content_on_200():
         assert roles == ["system", "user"]
         # 用户文本未被 scene 字符串污染
         assert body["messages"][1]["content"] == "睡不着"
-        # system prompt 按 scene 分化：late_night 场景关键词应出现
-        assert "深夜" in body["messages"][0]["content"]
+        # system prompt 按默认 persona 选择：未传 persona 时应使用 MOMO
+        assert "你是 MOMO" in body["messages"][0]["content"]
 
 
 @pytest.mark.asyncio

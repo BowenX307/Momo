@@ -4,13 +4,18 @@ import pytest
 
 from app.domain.conversation.schemas import ChatDemoRequest, Scene
 from app.domain.conversation.service import handle_chat_demo
+from app.domain.safety.provider import LocalOnlySafetyProvider
 from app.llm.classifier import SceneClassifier
 from app.llm.provider import LLMError, LLMProvider
 
 
 class _FakeOkProvider:
     async def complete(
-        self, scene: str, user_text: str, history: list[dict] | None = None
+        self,
+        scene: str,
+        user_text: str,
+        history: list[dict] | None = None,
+        persona: str = "momo",
     ) -> str:
         return f"fake-reply for {scene}: {user_text}"
 
@@ -21,7 +26,11 @@ class _FakeFailingProvider:
         self.status = status
 
     async def complete(
-        self, scene: str, user_text: str, history: list[dict] | None = None
+        self,
+        scene: str,
+        user_text: str,
+        history: list[dict] | None = None,
+        persona: str = "momo",
     ) -> str:
         raise LLMError(self.code, "boom", upstream_status=self.status)
 
@@ -45,8 +54,10 @@ async def test_handle_chat_demo_uses_explicit_scene_and_skips_classifier():
     """前端传了 scene → service 必须直接用，不调用 classifier。"""
     provider: LLMProvider = _FakeOkProvider()
     classifier = _SpyClassifier()
+    safety_provider = LocalOnlySafetyProvider()
     response = await handle_chat_demo(
         ChatDemoRequest(user_text="今晚胸口闷", scene=Scene.LATE_NIGHT),
+        safety_provider=safety_provider,
         provider=provider,
         classifier=classifier,
         is_mock=False,
@@ -63,8 +74,10 @@ async def test_handle_chat_demo_classifies_when_scene_omitted():
     """前端没传 scene → service 应调用 classifier，并把结果用到对话和响应里。"""
     provider: LLMProvider = _FakeOkProvider()
     classifier = _SpyClassifier(return_scene=Scene.RELATIONSHIP)
+    safety_provider = LocalOnlySafetyProvider()
     response = await handle_chat_demo(
         ChatDemoRequest(user_text="他根本就不在乎我", scene=None),
+        safety_provider=safety_provider,
         provider=provider,
         classifier=classifier,
         is_mock=False,
@@ -80,8 +93,10 @@ async def test_handle_chat_demo_degrades_to_mock_on_llm_error():
     """对话 provider 抛 LLMError → 降级到 MockProvider，degraded=True，scene 保留。"""
     provider: LLMProvider = _FakeFailingProvider(code="http_status", status=402)
     classifier: SceneClassifier = _SpyClassifier()
+    safety_provider = LocalOnlySafetyProvider()
     response = await handle_chat_demo(
         ChatDemoRequest(user_text="今晚胸口闷", scene=Scene.LATE_NIGHT),
+        safety_provider=safety_provider,
         provider=provider,
         classifier=classifier,
         is_mock=False,
@@ -98,8 +113,10 @@ async def test_handle_chat_demo_safety_blocks_before_llm_and_classifier():
     """危机关键词 → 直接固定文案，**既不调用 provider 也不调用 classifier**。"""
     provider: LLMProvider = _FakeFailingProvider()
     classifier = _SpyClassifier()
+    safety_provider = LocalOnlySafetyProvider()
     response = await handle_chat_demo(
         ChatDemoRequest(user_text="我想自杀", scene=None),
+        safety_provider=safety_provider,
         provider=provider,
         classifier=classifier,
         is_mock=False,
