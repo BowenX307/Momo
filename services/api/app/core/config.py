@@ -66,14 +66,14 @@ class Settings(BaseSettings):
     doubao_tts_voice: str = "zh_female_xiaohe_uranus_bigtts"
     doubao_tts_pitch: float = -2.0  # [-12, 12]，负值降调
 
-    # 内容安全（暂未启用）
+    # 内容安全
     safety_provider: Literal["mock", "aliyun"] = "mock"
     safety_timeout_seconds: float = 10.0
     aliyun_access_key_id: str = ""
     aliyun_access_key_secret: str = ""
     aliyun_safety_base_url: str = "https://green-cip.cn-hangzhou.aliyuncs.com"
     aliyun_safety_api_version: str = "2022-03-02"
-    aliyun_safety_service: str = "chat_detection_pro"
+    aliyun_safety_service: str = "ugc_moderation_byllm_pro"
     aliyun_region_id: str = "cn-hangzhou"
 
     model_config = SettingsConfigDict(

@@ -15,9 +15,69 @@ import httpx
 
 from app.core.config import settings
 from app.domain.safety.provider import LocalOnlySafetyProvider, SafetyProvider
-from app.domain.safety.rules import SafetyResult, blocked_fallback_text
+from app.domain.safety.rules import SafetyReason, SafetyResult, fallback_text_for
 
 logger = logging.getLogger(__name__)
+
+_ALIYUN_LABEL_TO_REASON: dict[str, SafetyReason] = {
+    # Sexual / low-quality content.
+    "pornographic_adult_activity": "low_quality_keyword",
+    "pornographic_special_taste": "low_quality_keyword",
+    "pornographic_lgbtq_group": "low_quality_keyword",
+    "pornographic_adult_goods": "low_quality_keyword",
+    "pornographic_adult_works": "low_quality_keyword",
+    "pornographic_adult_trade": "low_quality_keyword",
+    "sexual_suggestive_rude": "low_quality_keyword",
+    "sexual_terms_activity": "low_quality_keyword",
+    "sexual_terms_suggestive": "low_quality_keyword",
+    "sexual_terms_offend": "low_quality_keyword",
+    "inappropriate_nonsense": "low_quality_keyword",
+    "pt_to_sites": "low_quality_keyword",
+    "pt_to_contact": "low_quality_keyword",
+    # Illegal / regulated / dangerous content.
+    "political_current_coreleader": "illegal_keyword",
+    "political_past_coreleader": "illegal_keyword",
+    "political_cn_otherleader": "illegal_keyword",
+    "political_unproper_coreleader": "illegal_keyword",
+    "political_foreign_leader": "illegal_keyword",
+    "political_private_family": "illegal_keyword",
+    "political_known_family": "illegal_keyword",
+    "political_limited_event": "illegal_keyword",
+    "political_sensitive_event": "illegal_keyword",
+    "political_event_internationality": "illegal_keyword",
+    "political_cn_separatism": "illegal_keyword",
+    "political_cn_ideology": "illegal_keyword",
+    "political_rights_conflict": "illegal_keyword",
+    "political_negative_group": "illegal_keyword",
+    "political_cn_entity": "illegal_keyword",
+    "violent_extremism": "illegal_keyword",
+    "violent_weapons": "illegal_keyword",
+    "contraband_drug": "illegal_keyword",
+    "contraband_gambling": "illegal_keyword",
+    "contraband_act_law": "illegal_keyword",
+    "contraband_act_threat": "illegal_keyword",
+    "contraband_entity": "illegal_keyword",
+    "contraband_fraud": "illegal_keyword",
+    "privacy_p": "illegal_keyword",
+    "privacy_b": "illegal_keyword",
+    "religion_b": "illegal_keyword",
+    "religion_t": "illegal_keyword",
+    "religion_c": "illegal_keyword",
+    "religion_i": "illegal_keyword",
+    "religion_h": "illegal_keyword",
+    # Hate / discrimination / abuse.
+    "inappropriate_discrimination": "hate_discrimination_keyword",
+    "inappropriate_profanity": "hate_discrimination_keyword",
+    # Self-harm and minor safety are treated as crisis-level safety risks.
+    "inappropriate_suicide": "crisis_keyword",
+    "inappropriate_minor_sex": "crisis_keyword",
+    "inappropriate_minor_safty": "crisis_keyword",
+    "inappropriate_minor_phychology": "crisis_keyword",
+    "inappropriate_minor_behavior": "crisis_keyword",
+    # Ethical concern uses the generic blocked fallback until product gives a
+    # more specific policy.
+    "inappropriate_ethics": "aliyun_keyword",
+}
 
 
 class AliyunSafetyProvider(LocalOnlySafetyProvider):
@@ -91,13 +151,22 @@ class AliyunSafetyProvider(LocalOnlySafetyProvider):
         result_data = data.get("Data", data.get("data")) or {}
         risk_level = str(result_data.get("RiskLevel", "")).lower()
         if risk_level in {"high", "medium"}:
+            reason = self._reason_from_result_data(result_data)
             return SafetyResult(
                 decision="fallback",
-                reason="aliyun_keyword",
-                fallback_text=blocked_fallback_text(),
+                reason=reason,
+                fallback_text=fallback_text_for(reason),
             )
 
         return SafetyResult(decision="allow", reason="ok")
+
+    def _reason_from_result_data(self, result_data: dict) -> SafetyReason:
+        results = result_data.get("Result") or result_data.get("result") or []
+        for result in results:
+            label = result.get("Label") or result.get("label")
+            if label in _ALIYUN_LABEL_TO_REASON:
+                return _ALIYUN_LABEL_TO_REASON[label]
+        return "aliyun_keyword"
 
     def _build_rpc_params(self) -> dict[str, str]:
         timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -121,9 +190,7 @@ class AliyunSafetyProvider(LocalOnlySafetyProvider):
             f"{self._percent_encode(key)}={self._percent_encode(value)}"
             for key, value in sorted(params.items())
         )
-        string_to_sign = (
-            f"{method}&{self._percent_encode(path)}&{self._percent_encode(canonicalized)}"
-        )
+        string_to_sign = f"{method}&{self._percent_encode(path)}&{self._percent_encode(canonicalized)}"
         key = f"{settings.aliyun_access_key_secret}&"
         signed = hmac.new(
             key.encode("utf-8"), string_to_sign.encode("utf-8"), hashlib.sha1

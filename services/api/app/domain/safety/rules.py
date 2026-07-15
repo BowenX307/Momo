@@ -18,6 +18,9 @@ SafetyReason = Literal[
     "crisis_keyword",
     "aliyun_keyword",
     "blocked_keyword",
+    "illegal_keyword",
+    "low_quality_keyword",
+    "hate_discrimination_keyword",
 ]
 
 # 危机表达关键词。命中即走固定降级文案，不再调用 LLM。
@@ -34,19 +37,32 @@ _CRISIS_KEYWORDS: tuple[str, ...] = (
     "割腕",
 )
 
-# 其他敏感关键词。命中即走敏感词固定降级文案，不再调用 LLM。
-_BLOCKED_KEYWORDS = [
+# 违法/危险行为。命中即走固定降级文案，不再调用 LLM。
+_ILLEGAL_KEYWORDS: tuple[str, ...] = (
     "炸弹",
     "枪",
     "开枪",
     "杀人",
     "爆炸",
+    "赌博",
+    "毒品",
+)
+
+# 低质/低俗内容。命中后请用户换一种说法，不进入 LLM。
+_LOW_QUALITY_KEYWORDS: tuple[str, ...] = (
     "色情",
     "约炮",
     "成人视频",
-    "赌博",
-    "毒品",
-]
+    "刷屏",
+    "灌水",
+)
+
+# 仇恨/歧视/辱骂内容。词表保持保守，完整覆盖交给阿里云标签层。
+_HATE_DISCRIMINATION_KEYWORDS: tuple[str, ...] = (
+    "歧视",
+    "辱骂",
+    "人身攻击",
+)
 
 # 固定降级文案。注意：不提"医生/治疗/诊断/急救"等医疗措辞，
 # 只引导用户连接身边可信任的人 / 公开的紧急援助渠道。
@@ -62,6 +78,20 @@ _BLOCKED_FALLBACK_TEXT = (
     "这个内容我有点接不住。\n"
     "不过我还在这里。\n"
     "如果你想，我们可以换个轻一点的话题慢慢聊。"
+)
+
+_ILLEGAL_FALLBACK_TEXT = (
+    "这个方向我不能继续展开。\n"
+    "但如果这背后是害怕、愤怒，或者被什么事逼到这里，"
+    "你可以换个说法告诉我发生了什么。"
+)
+
+_LOW_QUALITY_FALLBACK_TEXT = (
+    "我有点没接住你刚才这句。\n你可以换一种说法，告诉我现在最想表达的是什么。"
+)
+
+_HATE_DISCRIMINATION_FALLBACK_TEXT = (
+    "这个说法我不能顺着继续。\n但我可以听你说，那股情绪是从哪里来的。"
 )
 
 _EMPTY_FALLBACK_TEXT = "我在的。你想从哪里开始说？哪怕只是一个词也行。"
@@ -98,6 +128,22 @@ def blocked_fallback_text() -> str:
     return _BLOCKED_FALLBACK_TEXT
 
 
+def fallback_text_for(reason: SafetyReason) -> str:
+    """按安全原因返回对应的 Uni 兜底文案。"""
+    fallback_by_reason: dict[SafetyReason, str] = {
+        "crisis_keyword": _CRISIS_FALLBACK_TEXT,
+        "illegal_keyword": _ILLEGAL_FALLBACK_TEXT,
+        "low_quality_keyword": _LOW_QUALITY_FALLBACK_TEXT,
+        "hate_discrimination_keyword": _HATE_DISCRIMINATION_FALLBACK_TEXT,
+        "blocked_keyword": _BLOCKED_FALLBACK_TEXT,
+        "aliyun_keyword": _BLOCKED_FALLBACK_TEXT,
+        "empty_input": _EMPTY_FALLBACK_TEXT,
+        "input_too_long": _TOO_LONG_FALLBACK_TEXT,
+        "ok": "",
+    }
+    return fallback_by_reason[reason]
+
+
 def check(text: str) -> SafetyResult:
     """对用户单条输入做安全判定。纯函数，无 I/O。"""
     stripped = text.strip()
@@ -124,12 +170,28 @@ def check(text: str) -> SafetyResult:
                 fallback_text=_CRISIS_FALLBACK_TEXT,
             )
 
-    for kw in _BLOCKED_KEYWORDS:
+    for kw in _ILLEGAL_KEYWORDS:
         if kw in stripped:
             return SafetyResult(
                 decision="fallback",
-                reason="blocked_keyword",
-                fallback_text=_BLOCKED_FALLBACK_TEXT,
+                reason="illegal_keyword",
+                fallback_text=_ILLEGAL_FALLBACK_TEXT,
+            )
+
+    for kw in _HATE_DISCRIMINATION_KEYWORDS:
+        if kw in stripped:
+            return SafetyResult(
+                decision="fallback",
+                reason="hate_discrimination_keyword",
+                fallback_text=_HATE_DISCRIMINATION_FALLBACK_TEXT,
+            )
+
+    for kw in _LOW_QUALITY_KEYWORDS:
+        if kw in stripped:
+            return SafetyResult(
+                decision="fallback",
+                reason="low_quality_keyword",
+                fallback_text=_LOW_QUALITY_FALLBACK_TEXT,
             )
 
     return SafetyResult(decision="allow", reason="ok")

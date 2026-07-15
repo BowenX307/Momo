@@ -6,13 +6,14 @@
  * 设计原则：
  * - 不弹窗、不闪烁，只是一行小字，不抢主回复的注意力；
  * - 危机命中：橙色调，引导现实支持（与后端 safety 文案语气一致）；
+ * - 普通安全命中：棕灰色调，轻提示已换成安全回应；
  * - degraded：蓝灰，告诉用户"目前是本地兜底"，不让 ta 误以为是真模型；
  * - 错误：红灰，简短描述，避免技术细节吓到用户。
  */
 
 import type { SafetyFlag } from "@/lib/api/momo";
 
-type Variant = "crisis" | "degraded" | "error" | null;
+type Variant = "crisis" | "safety" | "degraded" | "error" | null;
 
 interface Props {
   safetyFlag?: SafetyFlag;
@@ -22,12 +23,16 @@ interface Props {
 
 function pickVariant({ safetyFlag, degraded, error }: Props): Variant {
   if (error) return "error";
+  if (safetyFlag === "crisis_keyword") return "crisis";
   if (
-    safetyFlag === "crisis_keyword" ||
     safetyFlag === "aliyun_keyword" ||
-    safetyFlag === "blocked_keyword"
-  )
-    return "crisis";
+    safetyFlag === "blocked_keyword" ||
+    safetyFlag === "illegal_keyword" ||
+    safetyFlag === "low_quality_keyword" ||
+    safetyFlag === "hate_discrimination_keyword"
+  ) {
+    return "safety";
+  }
   if (degraded) return "degraded";
   return null;
 }
@@ -50,6 +55,14 @@ export function StatusHint(props: Props) {
     return (
       <p className="mt-3 text-center text-xs leading-relaxed text-stone-500 dark:text-stone-400">
         现在是本地兜底回复，外部模型暂时联系不上。
+      </p>
+    );
+  }
+
+  if (variant === "safety") {
+    return (
+      <p className="mt-3 text-center text-xs leading-relaxed text-stone-500 dark:text-stone-400">
+        这句已切换成安全回应，你可以换一种说法继续。
       </p>
     );
   }
