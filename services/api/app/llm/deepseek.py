@@ -17,6 +17,19 @@ import httpx
 from app.core.config import settings
 from app.llm.provider import LLMError
 
+# 复用一个 httpx 客户端(keep-alive 连接池),省掉每轮重新建连+TLS 握手的延迟。
+_shared_client: httpx.AsyncClient | None = None
+
+
+def _client() -> httpx.AsyncClient:
+    global _shared_client
+    if _shared_client is None or _shared_client.is_closed:
+        _shared_client = httpx.AsyncClient(
+            timeout=settings.llm_timeout_seconds,
+            limits=httpx.Limits(max_keepalive_connections=8, keepalive_expiry=60.0),
+        )
+    return _shared_client
+
 _MOMO_PERSONA = """你是 MOMO，一只住在夜色海面上的小水母。不是 AI 助手，不是心理医生，是一个有自己世界的朋友。
 
 你半透明，会发光。世界里有海面、月光、潮汐。感知不到时间，只有浪。
@@ -179,10 +192,7 @@ class DeepSeekProvider:
         url = f"{settings.deepseek_base_url}/chat/completions"
 
         try:
-            async with httpx.AsyncClient(
-                timeout=settings.llm_timeout_seconds
-            ) as client:
-                response = await client.post(url, headers=headers, json=payload)
+            response = await _client().post(url, headers=headers, json=payload)
         except httpx.TimeoutException as exc:
             raise LLMError("timeout", f"deepseek timeout: {exc}") from exc
         except httpx.HTTPError as exc:
@@ -231,28 +241,27 @@ class DeepSeekProvider:
         url = f"{settings.deepseek_base_url}/chat/completions"
 
         try:
-            async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
-                async with client.stream("POST", url, headers=headers, json=payload) as response:
-                    if response.status_code != 200:
-                        await response.aread()
-                        raise LLMError(
-                            "http_status",
-                            f"deepseek stream non-200: {response.status_code}",
-                            upstream_status=response.status_code,
-                        )
-                    async for line in response.aiter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        data = line[6:]
-                        if data == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data)
-                            token = chunk["choices"][0]["delta"].get("content", "")
-                            if token:
-                                yield token
-                        except (KeyError, IndexError, ValueError):
-                            continue
+            async with _client().stream("POST", url, headers=headers, json=payload) as response:
+                if response.status_code != 200:
+                    await response.aread()
+                    raise LLMError(
+                        "http_status",
+                        f"deepseek stream non-200: {response.status_code}",
+                        upstream_status=response.status_code,
+                    )
+                async for line in response.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data = line[6:]
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                        token = chunk["choices"][0]["delta"].get("content", "")
+                        if token:
+                            yield token
+                    except (KeyError, IndexError, ValueError):
+                        continue
         except httpx.TimeoutException as exc:
             raise LLMError("timeout", f"deepseek stream timeout: {exc}") from exc
         except httpx.HTTPError as exc:
@@ -283,11 +292,10 @@ class DeepSeekProvider:
         }
         url = f"{settings.deepseek_base_url}/chat/completions"
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.post(url, headers=headers, json=payload)
-                if resp.status_code != 200:
-                    return ""
-                data = resp.json()
-                return data["choices"][0]["message"]["content"].strip()
+            resp = await _client().post(url, headers=headers, json=payload, timeout=5.0)
+            if resp.status_code != 200:
+                return ""
+            data = resp.json()
+            return data["choices"][0]["message"]["content"].strip()
         except Exception:
             return ""

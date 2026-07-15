@@ -24,6 +24,7 @@ from uuid import uuid4
 import structlog
 
 from app.domain.conversation.schemas import ChatDemoRequest, ChatDemoResponse, Persona, Scene
+from app.domain.reaction.service import detect_reaction
 from app.domain.safety import check as safety_check
 from app.domain.speech.service import _clean_for_tts
 from app.llm.classifier import SceneClassifier
@@ -31,6 +32,8 @@ from app.llm.provider import LLMError, LLMProvider, MockProvider
 from app.tts.provider import TTSError, TTSProvider
 
 _SENTENCE_ENDS = frozenset("。？！…\n")
+_SOFT_ENDS = frozenset("，、,")   # 第一段抢跑用的软停顿
+_FIRST_CHUNK_MIN = 6             # 第一段至少几个字才在软停顿处提前切出去
 
 logger = structlog.get_logger(__name__)
 
@@ -52,10 +55,13 @@ async def _synthesize_audio(
     tts_provider: TTSProvider,
     tts_is_mock: bool,
     request_id: str,
+    persona: str | None = None,
 ) -> tuple[str, str, bool]:
     """调用 TTS，返回 (audio_base64, content_type, is_mock)。失败时静默降级返回空音频。"""
     try:
-        result = await tts_provider.synthesize(_clean_for_tts(reply), scene=scene.value)
+        result = await tts_provider.synthesize(
+            _clean_for_tts(reply), scene=scene.value, persona=persona
+        )
         audio_b64 = base64.b64encode(result.audio).decode("ascii") if result.audio else ""
         return audio_b64, result.content_type, tts_is_mock
     except TTSError as exc:
@@ -98,7 +104,8 @@ async def handle_chat_demo(
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
         if tts_provider:
             audio_b64, audio_ct, audio_mock = await _synthesize_audio(
-                safety.fallback_text, scene, tts_provider, tts_is_mock, request_id
+                safety.fallback_text, scene, tts_provider, tts_is_mock, request_id,
+                persona=request.persona.value,
             )
         return ChatDemoResponse(
             reply=safety.fallback_text,
@@ -144,11 +151,17 @@ async def handle_chat_demo(
             reply_chars=len(reply),
             emotion=emotion,
         )
+        # 反应判断需要 reply，和 TTS 并行跑，藏在合成时间里，几乎不增加等待
+        reaction_task = asyncio.create_task(
+            detect_reaction(reply, request.persona.value)
+        )
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
         if tts_provider:
             audio_b64, audio_ct, audio_mock = await _synthesize_audio(
-                reply, scene, tts_provider, tts_is_mock, request_id
+                reply, scene, tts_provider, tts_is_mock, request_id,
+                persona=request.persona.value,
             )
+        reaction = await reaction_task
         return ChatDemoResponse(
             reply=reply,
             scene=scene,
@@ -159,6 +172,7 @@ async def handle_chat_demo(
             audio_content_type=audio_ct,
             audio_is_mock=audio_mock,
             emotion=emotion,
+            reaction=reaction,
         )
     except LLMError as exc:
         logger.warning(
@@ -175,7 +189,8 @@ async def handle_chat_demo(
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
         if tts_provider:
             audio_b64, audio_ct, audio_mock = await _synthesize_audio(
-                mock_reply, scene, tts_provider, tts_is_mock, request_id
+                mock_reply, scene, tts_provider, tts_is_mock, request_id,
+                persona=request.persona.value,
             )
         return ChatDemoResponse(
             reply=mock_reply,
@@ -193,14 +208,23 @@ async def handle_chat_demo(
 async def _iter_sentences(
     token_stream: AsyncGenerator[str, None],
 ) -> AsyncGenerator[str, None]:
-    """把 token 流按句子边界切分，每完整一句 yield 一次。"""
+    """把 token 流按句子边界切分，每完整一句 yield 一次。
+
+    抢跑：第一段允许在软停顿(逗号/顿号)且够长时就先切出去做 TTS，
+    让 uni 尽早开口；之后仍按整句切分，保证语气自然。
+    """
     buf = ""
+    first_done = False
     async for token in token_stream:
         buf += token
-        if buf[-1] in _SENTENCE_ENDS:
-            sentence = buf.strip()
-            if sentence:
-                yield sentence
+        last = buf[-1]
+        if last in _SENTENCE_ENDS or (
+            not first_done and last in _SOFT_ENDS and len(buf.strip()) >= _FIRST_CHUNK_MIN
+        ):
+            chunk = buf.strip()
+            if chunk:
+                yield chunk
+                first_done = True
             buf = ""
     if buf.strip():
         yield buf.strip()
@@ -222,7 +246,8 @@ async def stream_chat_demo(
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
         if tts_provider:
             audio_b64, audio_ct, audio_mock = await _synthesize_audio(
-                safety.fallback_text, scene, tts_provider, tts_is_mock, request_id
+                safety.fallback_text, scene, tts_provider, tts_is_mock, request_id,
+                persona=request.persona.value,
             )
         yield "data: " + json.dumps({
             "type": "audio", "index": 0,
@@ -261,7 +286,8 @@ async def stream_chat_demo(
             audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
             if tts_provider:
                 audio_b64, audio_ct, audio_mock = await _synthesize_audio(
-                    sentence, scene, tts_provider, tts_is_mock, request_id
+                    sentence, scene, tts_provider, tts_is_mock, request_id,
+                    persona=request.persona.value,
                 )
             yield "data: " + json.dumps({
                 "type": "audio", "index": sentence_idx, "text": sentence,
@@ -284,7 +310,8 @@ async def stream_chat_demo(
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
         if tts_provider:
             audio_b64, audio_ct, audio_mock = await _synthesize_audio(
-                full_reply, scene, tts_provider, tts_is_mock, request_id
+                full_reply, scene, tts_provider, tts_is_mock, request_id,
+                persona=request.persona.value,
             )
         yield "data: " + json.dumps({
             "type": "audio", "index": 0, "text": full_reply,

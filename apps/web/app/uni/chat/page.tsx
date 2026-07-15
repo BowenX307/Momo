@@ -15,6 +15,7 @@ import Image from "next/image";
 
 import {
   API_BASE,
+  fetchAftercare,
   fetchChatDemoStream,
   MomoApiError,
   type ChatDemoRequest,
@@ -135,6 +136,9 @@ export default function UniChatPage() {
   const [showPolaroid, setShowPolaroid] = useState(false);
   const [moodIndex, setMoodIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
+  const [polaroidLoading, setPolaroidLoading] = useState(false);
+  // 后端现写的金句(据真实对话);为 null 时回落到该情绪档 curated 金句(手动切档时)
+  const [dynamicQuote, setDynamicQuote] = useState<string | null>(null);
   const [stamp, setStamp] = useState<{ date: string; flavor: string }>({ date: "", flavor: "" });
   const [history, setHistory] = useState<HistoryMessage[]>([]);
   const [turns, setTurns] = useState<ConvTurn[]>([]);
@@ -244,6 +248,28 @@ export default function UniChatPage() {
   function applyReply(text: string) {
     setReply(text);
     setReplyKey((k) => k + 1);
+  }
+
+  // 相机:据真实对话现拍一张——后端判情绪档(选照片)+ 按人格现写金句(印背面)。
+  // 失败静默落 calm,保证永远出片。
+  async function handleTakePolaroid() {
+    if (polaroidLoading) return;
+    setPolaroidLoading(true);
+    const stampNow = makeStamp();
+    try {
+      const res = await fetchAftercare({ persona, history });
+      const idx = MOODS.findIndex((m) => m.key === res.mood);
+      setMoodIndex(idx >= 0 ? idx : 2); // 找不到落 calm
+      setDynamicQuote(res.quote);
+    } catch {
+      setMoodIndex(2); // calm 兜底
+      setDynamicQuote(null);
+    } finally {
+      setStamp(stampNow);
+      setFlipped(false);
+      setPolaroidLoading(false);
+      setShowPolaroid(true);
+    }
   }
 
   async function handleSend(overrideText?: string) {
@@ -509,6 +535,7 @@ export default function UniChatPage() {
                 onError={setError}
                 showSilenceRing={false}
                 className="text-[#504437]/70 hover:text-[#d66e76]"
+                sendClassName="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#d66e76] text-white transition-colors hover:bg-[#c2555e]"
                 idleIcon={
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                     <rect x="9" y="3" width="6" height="11" rx="3" />
@@ -517,33 +544,40 @@ export default function UniChatPage() {
                   </svg>
                 }
               />
-              <button
-                type="button"
-                onClick={() => setShowHistory(true)}
-                aria-label="查看聊过的话"
-                className="flex h-9 w-9 shrink-0 items-center justify-center text-[#504437]/70 transition-colors hover:text-[#d66e76]"
-              >
-                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M12 20h9" />
-                  <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setStamp(makeStamp());
-                  setMoodIndex(0);
-                  setFlipped(false);
-                  setShowPolaroid(true);
-                }}
-                aria-label="uni 给你拍张照"
-                className="flex h-9 w-9 shrink-0 items-center justify-center text-[#504437]/70 transition-colors hover:text-[#d66e76]"
-              >
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M4 8.5h3l1.4-2h7.2L17 8.5h3a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1Z" />
-                  <circle cx="12" cy="13" r="3.2" />
-                </svg>
-              </button>
+              {/* 录音时铅笔+相机自动收起,只留麦克风(停止)+发送键,避免挤成四个 */}
+              {voicePhase !== "recording" && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowHistory(true)}
+                    aria-label="查看聊过的话"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center text-[#504437]/70 transition-colors hover:text-[#d66e76]"
+                  >
+                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <path d="M12 20h9" />
+                      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleTakePolaroid}
+                    disabled={polaroidLoading}
+                    aria-label="uni 给你拍张照"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center text-[#504437]/70 transition-colors hover:text-[#d66e76] disabled:opacity-60"
+                  >
+                    {polaroidLoading ? (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" className="animate-spin" aria-hidden>
+                        <path d="M21 12a9 9 0 1 1-6.2-8.5" />
+                      </svg>
+                    ) : (
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                        <path d="M4 8.5h3l1.4-2h7.2L17 8.5h3a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1Z" />
+                        <circle cx="12" cy="13" r="3.2" />
+                      </svg>
+                    )}
+                  </button>
+                </>
+              )}
               </div>
               <textarea
                 value={input}
@@ -713,7 +747,7 @@ export default function UniChatPage() {
                   />
                   <div className="relative z-10 flex h-full flex-col">
                     <p className="whitespace-pre-line font-hand text-xl leading-relaxed text-[#504437]" style={{ filter: "url(#crayon-soft)" }}>
-                      {MOODS[moodIndex].quote}
+                      {dynamicQuote ?? MOODS[moodIndex].quote}
                     </p>
                     <svg className="my-4 h-[8px] w-24" viewBox="0 0 120 8" preserveAspectRatio="none" fill="none" aria-hidden>
                       <path d="M2 5 Q 30 1 60 4 T 118 4" stroke="#d66e76" strokeOpacity="0.6" strokeWidth="2.4" strokeLinecap="round" />
@@ -734,29 +768,8 @@ export default function UniChatPage() {
               </div>
             </div>
 
-            {/* 情绪档切换 */}
-            <div className="pol-in mt-6 flex items-center gap-6" style={{ animationDelay: "120ms" }}>
-              <button
-                type="button"
-                aria-label="上一张"
-                onClick={() => { setMoodIndex((i) => (i + MOODS.length - 1) % MOODS.length); setFlipped(false); }}
-                className="flex h-9 w-9 items-center justify-center text-[#f0e7d6]/80 transition hover:text-white"
-                style={{ filter: "url(#crayon-soft)" }}
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 5l-7 7 7 7" /></svg>
-              </button>
-              <span className="min-w-[72px] text-center font-hand text-lg text-[#f0e7d6]">{MOODS[moodIndex].label}</span>
-              <button
-                type="button"
-                aria-label="下一张"
-                onClick={() => { setMoodIndex((i) => (i + 1) % MOODS.length); setFlipped(false); }}
-                className="flex h-9 w-9 items-center justify-center text-[#f0e7d6]/80 transition hover:text-white"
-                style={{ filter: "url(#crayon-soft)" }}
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 5l7 7-7 7" /></svg>
-              </button>
-            </div>
-            <p className="pol-in mt-3 text-center font-hand text-sm text-[#f0e7d6]/55" style={{ animationDelay: "200ms" }}>
+            {/* 相机据对话自动选匹配那张,不再手动翻页 */}
+            <p className="pol-in mt-6 text-center font-hand text-sm text-[#f0e7d6]/55" style={{ animationDelay: "120ms" }}>
               点卡片翻面 · 点空白处收起
             </p>
           </div>

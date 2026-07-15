@@ -31,6 +31,7 @@ class TTSProvider(Protocol):
         text: str,
         *,
         scene: str | None = None,
+        persona: str | None = None,
     ) -> SynthesisResult: ...
 
 
@@ -42,5 +43,6 @@ class MockTTSProvider:
         text: str,
         *,
         scene: str | None = None,
+        persona: str | None = None,
     ) -> SynthesisResult:
         return SynthesisResult(audio=b"", content_type="audio/mpeg")

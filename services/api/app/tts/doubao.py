@@ -17,6 +17,19 @@ _RESOURCE_ID = "seed-tts-2.0"
 
 _DEFAULT_RATE = -8  # range [-50, 100]
 
+# 按人格覆盖 音色 / 资源版本 / 语速。未列出的人格用全局 settings.doubao_tts_voice
+# + 默认 _RESOURCE_ID + _DEFAULT_RATE。
+# iris = 高洞察力·有点毒嘴的老朋友 → 少年梓辛（清亮少年音，seed-tts-1.0），
+#         语速调快让吐槽更俏皮轻快，不刻薄。
+_PERSONA_VOICE_OVERRIDES: dict[str, dict[str, object]] = {
+    "iris": {
+        "speaker": "zh_male_shaonianzixin_moon_bigtts",
+        "resource_id": "seed-tts-1.0",
+        "speech_rate": 18,  # 比默认 -8 明显快一点
+        "pitch": 2.0,       # 全局 -2 降调会把少年音压低沉，iris 单独抬到 +2 保持清亮
+    },
+}
+
 _MIN_CLAUSE_LEN = 8   # 逗号两侧从句都要达到此长度才插停顿
 _MIN_TEXT_LEN = 20    # 短文本不处理
 
@@ -53,25 +66,30 @@ class DoubaoTTSProvider:
         text: str,
         *,
         scene: str | None = None,
+        persona: str | None = None,
     ) -> SynthesisResult:
         stripped = text.strip()
         if not stripped:
             return SynthesisResult(audio=b"")
 
-        speech_rate = _DEFAULT_RATE
+        override = _PERSONA_VOICE_OVERRIDES.get(persona or "", {})
+        voice = str(override.get("speaker", settings.doubao_tts_voice))
+        resource_id = str(override.get("resource_id", _RESOURCE_ID))
+        speech_rate = int(override.get("speech_rate", _DEFAULT_RATE))
+        pitch = float(override.get("pitch", settings.doubao_tts_pitch))
 
         payload = {
             "user": {"uid": "momo"},
             "req_params": {
                 "text": _with_natural_pauses(stripped),
-                "speaker": settings.doubao_tts_voice,
+                "speaker": voice,
                 "audio_params": {
                     "format": "mp3",
                     "sample_rate": 24000,
                     "speech_rate": speech_rate,
                 },
                 "additions": json.dumps({
-                    "post_process": {"pitch": settings.doubao_tts_pitch},
+                    "post_process": {"pitch": pitch},
                     "disable_markdown_filter": True,
                     "enable_ssml": True,
                 }),
@@ -79,7 +97,7 @@ class DoubaoTTSProvider:
         }
         headers = {
             "X-Api-Key": settings.doubao_tts_api_key,
-            "X-Api-Resource-Id": _RESOURCE_ID,
+            "X-Api-Resource-Id": resource_id,
             "Content-Type": "application/json",
         }
 

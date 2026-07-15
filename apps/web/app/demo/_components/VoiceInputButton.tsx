@@ -51,6 +51,8 @@ interface Props {
   className?: string;
   /** 是否显示录音时的静音倒计时环(默认显示)。 */
   showSilenceRing?: boolean;
+  /** 录音时"发送"按钮的样式(不传则用默认填充样式)。 */
+  sendClassName?: string;
 }
 
 type SttMode = "browser" | "backend";
@@ -152,6 +154,7 @@ export function VoiceInputButton({
   idleIcon,
   className,
   showSilenceRing = true,
+  sendClassName,
 }: Props) {
   const [phase, setPhase] = useState<VoicePhase>("idle");
   const [sttMode, setSttMode] = useState<SttMode>("backend");
@@ -611,13 +614,28 @@ export function VoiceInputButton({
     onInterruptSpeaking,
   ]);
 
+  // 手动"发送":录音时立刻结束并转写提交(不等 VAD 静音),嘈杂环境救急。
+  const finishNow = useCallback(() => {
+    if (phase !== "recording") return;
+    if (maxTimerRef.current) {
+      clearTimeout(maxTimerRef.current);
+      maxTimerRef.current = null;
+    }
+    if (sttMode === "browser") {
+      speechRef.current?.stop(); // → onend → onTranscript
+    } else {
+      void stopBackendRecordingRef.current(); // 停录 → 转写 → onTranscript
+    }
+  }, [phase, sttMode]);
+
   const isRecording = phase === "recording";
   const isTranscribing = phase === "transcribing";
   const isBusy = disabled || isTranscribing;
   const isConversing = conversationActive ?? false;
 
   return (
-    <div className="relative flex shrink-0 flex-col items-center">
+    <div className="flex shrink-0 items-center gap-1.5">
+    <div className="relative flex flex-col items-center">
       <button
         type="button"
         aria-pressed={isRecording}
@@ -683,6 +701,25 @@ export function VoiceInputButton({
             style={{ width: `${silenceProgress * 100}%` }}
           />
         </span>
+      )}
+    </div>
+
+      {/* 录音时的"发送":立刻结束并提交,不用等静音 */}
+      {isRecording && (
+        <button
+          type="button"
+          onClick={finishNow}
+          aria-label="发送"
+          className={
+            sendClassName ??
+            "inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#d97757] text-white transition-opacity hover:opacity-90"
+          }
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <line x1="22" y1="2" x2="11" y2="13" />
+            <polygon points="22 2 15 22 11 13 2 9 22 2" />
+          </svg>
+        </button>
       )}
     </div>
   );

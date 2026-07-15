@@ -502,14 +502,6 @@ export default function DemoPage() {
               rows={1}
               className="flex-1 resize-none bg-transparent px-2 py-1.5 text-base leading-relaxed text-stone-900 placeholder-stone-400 outline-none disabled:opacity-60 dark:text-stone-100 dark:placeholder-stone-500"
             />
-            <button
-              type="button"
-              onClick={() => void handleSend()}
-              disabled={!input.trim() && !loading && !speaking}
-              className="shrink-0 rounded-xl bg-[#d97757] px-3.5 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[#c66645] disabled:cursor-not-allowed disabled:bg-stone-300 dark:disabled:bg-stone-700"
-            >
-              {loading || speaking ? "打断" : "发送"}
-            </button>
           </div>
         </div>
       </main>

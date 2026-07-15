@@ -7,7 +7,7 @@ demo 阶段仅维护后端一份，前端按字符串字面量传入。
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.domain.safety import SafetyReason
 
@@ -68,6 +68,12 @@ class ChatDemoRequest(BaseModel):
         description="最近对话历史（最多 20 条 / 10 轮），不含本轮 user_text",
     )
 
+    @field_validator("scene", mode="before")
+    @classmethod
+    def _empty_scene_is_none(cls, v: object) -> object:
+        """空串当作未指定。Unity 的 JsonUtility 会把 null 序列化成 ""，别让它吃 422。"""
+        return None if v == "" else v
+
 
 class ChatDemoResponse(BaseModel):
     """单轮 demo 响应。
@@ -91,3 +97,10 @@ class ChatDemoResponse(BaseModel):
     audio_content_type: str = Field(default="audio/mpeg")
     audio_is_mock: bool = Field(default=False)
     emotion: str = Field(default="", description="用户输入的情绪标签，空串表示未检测到")
+    reaction: str = Field(
+        default="",
+        description=(
+            "小人该播的反应动画，据 uni 这句回答判定；空串表示无（momo 或判定失败），"
+            "前端回落 Idle。取值随人格：iris=开心/伤心/疑惑/肯定/否定，rocky=开心/伤心/疑惑/关心"
+        ),
+    )

@@ -54,6 +54,9 @@ export interface ChatDemoResponse {
   audio_is_mock: boolean;
   /** 用户输入的情绪标签；空串表示未检测到 */
   emotion?: string;
+  /** 小人该播的反应动画，据本句回答判定；空串=无（momo/判定失败），前端回落 Idle。
+   * iris: 开心|伤心|疑惑|肯定|否定  rocky: 开心|伤心|疑惑|关心 */
+  reaction?: string;
 }
 
 export interface HealthResponse {
@@ -131,6 +134,37 @@ export async function fetchChatDemo(
   }
 
   return (await res.json()) as ChatDemoResponse;
+}
+
+export type AftercareMood = "down" | "anxious" | "calm";
+
+export interface AftercareRequest {
+  persona: Persona;
+  history?: HistoryMessage[];
+}
+
+export interface AftercareResponse {
+  mood: AftercareMood;
+  quote: string;
+  is_mock: boolean;
+}
+
+/** 调 /v1/aftercare/generate：据对话判情绪档 + 现写金句（拍立得背面）。 */
+export async function fetchAftercare(
+  payload: AftercareRequest,
+  options: { signal?: AbortSignal; baseUrl?: string } = {},
+): Promise<AftercareResponse> {
+  const base = options.baseUrl ?? API_BASE;
+  const res = await fetch(`${base}/v1/aftercare/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: options.signal,
+  });
+  if (!res.ok) {
+    throw new MomoApiError(`HTTP ${res.status}`, res.status);
+  }
+  return (await res.json()) as AftercareResponse;
 }
 
 /** 上传音频到 /v1/speech/transcribe，返回转写文本。 */
