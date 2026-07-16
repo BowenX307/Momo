@@ -7,7 +7,7 @@
  * 选中项加深、左侧圆点变实心。
  */
 
-import type { Scene } from "@/lib/api/momo";
+import type { Scene } from "@/lib/api/yewne";
 
 interface Option {
   scene: Scene;

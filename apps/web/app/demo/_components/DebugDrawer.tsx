@@ -13,7 +13,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import type { ChatDemoResponse, HealthResponse } from "@/lib/api/momo";
+import type { ChatDemoResponse, HealthResponse } from "@/lib/api/yewne";
 
 interface Props {
   apiBase: string;

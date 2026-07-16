@@ -1,7 +1,7 @@
-import type { HistoryMessage, Persona, Scene } from "@/lib/api/momo";
+import type { HistoryMessage, Persona, Scene } from "@/lib/api/yewne";
 
 // 会话按人格分键存储，切换人格时各自保留历史。
-const KEY_PREFIX = "momo:session:";
+const KEY_PREFIX = "yewne:session:";
 const TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_TURNS = 10;
 const MAX_MSG_LEN = 500;

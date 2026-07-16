@@ -18,13 +18,13 @@ logger = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用启动/关闭时的钩子"""
-    logger.info("momo_api_starting", env=settings.env)
+    logger.info("yewne_api_starting", env=settings.env)
     yield
-    logger.info("momo_api_stopping")
+    logger.info("yewne_api_stopping")
 
 
 app = FastAPI(
-    title="MOMO API",
+    title="Yewne API",
     description="场景化 AI 情绪陪伴后端",
     version="0.1.0",
     lifespan=lifespan,
@@ -45,7 +45,7 @@ app.include_router(v1_router)
 
 @app.get("/")
 async def root():
-    return {"service": "momo-api", "status": "ok"}
+    return {"service": "yewne-api", "status": "ok"}
 
 
 @app.get("/health")

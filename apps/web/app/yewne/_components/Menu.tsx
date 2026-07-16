@@ -11,7 +11,7 @@ import Link from "next/link";
 
 const LINKS: { label: string; href: string }[] = [
   { label: "体验 Demo", href: "/demo" },
-  { label: "关于 uni", href: "#" },
+  { label: "关于于你", href: "#" },
   { label: "功能特性", href: "#" },
   { label: "团队", href: "#" },
   { label: "联系我们", href: "#" },
@@ -42,7 +42,7 @@ export function Menu() {
 
       {/* 全屏菜单 */}
       {open && (
-        <div className="uni-fade fixed inset-0 z-50 bg-[#f0e7d6]">
+        <div className="yewne-fade fixed inset-0 z-50 bg-[#f0e7d6]">
           {/* 纸张颗粒 */}
           <div
             className="pointer-events-none absolute inset-0"

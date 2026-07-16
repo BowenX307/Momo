@@ -10,7 +10,7 @@
  * - 错误：红灰，简短描述，避免技术细节吓到用户。
  */
 
-import type { SafetyFlag } from "@/lib/api/momo";
+import type { SafetyFlag } from "@/lib/api/yewne";
 
 type Variant = "crisis" | "degraded" | "error" | null;
 

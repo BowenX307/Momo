@@ -39,7 +39,7 @@ class LLMProvider(Protocol):
         scene: str,
         user_text: str,
         history: list[dict] | None = None,
-        persona: str = "momo",
+        persona: str = "nini",
     ) -> str: ...
 
 
@@ -64,7 +64,7 @@ class MockProvider:
         scene: str,
         user_text: str,
         history: list[dict] | None = None,
-        persona: str = "momo",
+        persona: str = "nini",
     ) -> str:
         template = self._SCENE_TEMPLATES.get(scene, self._DEFAULT_TEMPLATE)
         echo = f"你说「{user_text.strip()[:40]}」，" if user_text.strip() else ""

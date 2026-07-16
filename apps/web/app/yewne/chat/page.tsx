@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * /uni/chat —— 高级版 demo 的对话页。
+ * /yewne/chat —— 高级版 demo 的对话页。
  *
  * 左右布局:左 40% 小人(idle/思考/写中 三态),右 60% 最新回复(手写体大字、逐字浮现)+ 输入。
  * 不是聊天气泡流,是"焦点句"。功能逻辑复用 /demo(流式/逐字渐显/语音/打断/人格/会话)。
@@ -17,12 +17,12 @@ import {
   API_BASE,
   fetchAftercare,
   fetchChatDemoStream,
-  MomoApiError,
+  YewneApiError,
   type ChatDemoRequest,
   type HistoryMessage,
   type Persona,
   type Scene,
-} from "@/lib/api/momo";
+} from "@/lib/api/yewne";
 import {
   enqueueAudio,
   hadRealAudio,
@@ -30,7 +30,7 @@ import {
   stopAudioQueue,
   unlockAudio,
   whenQueueDone,
-} from "@/lib/speech/playMomoSpeech";
+} from "@/lib/speech/playYewneSpeech";
 import {
   loadSession,
   saveSession,
@@ -42,20 +42,18 @@ import {
 } from "@/app/demo/_components/VoiceInputButton";
 
 const PERSONA_GREETINGS: Record<Persona, string> = {
-  momo: "我在的。慢慢说，我一直在。",
-  iris: "来了？直接说吧，我听着。",
-  rocky: "我在。不用想怎么开口，先说一句。",
+  youyou: "来了？直接说吧，我听着。",
+  nini: "我在。不用想怎么开口，先说一句。",
 };
 
-// momo 下线,保留为"最初的人格"(仍在 Persona 类型/问候语/后端里),不再作为可选项。
-const PERSONAS: Persona[] = ["iris", "rocky"];
+const PERSONAS: Persona[] = ["youyou", "nini"];
 
 // 小人三态对应的图。thinking / writing 待换成真实姿势(思考 / 趴着写字)。
 type CharState = "idle" | "thinking" | "writing";
 const CHAR_IMG: Record<CharState, string> = {
-  idle: "/uni/uni-write.png",
-  thinking: "/uni/uni-write.png", // TODO 换成"思考"横构图
-  writing: "/uni/uni-write.png",
+  idle: "/yewne/yewne-write.png",
+  thinking: "/yewne/yewne-write.png", // TODO 换成"思考"横构图
+  writing: "/yewne/yewne-write.png",
 };
 
 // 圆角羽化遮罩,让小人融进纸背景(同 hero 手法)。
@@ -70,8 +68,8 @@ const GRAIN_FINE =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.7'/%3E%3C/svg%3E\")";
 
 // ── 拍立得 Aftercare ──────────────────────────────────────────────
-// "uni 给你拍了张照":点相机 → 一张宽幅拍立得摇出。正面 POV 自拍(按情绪变),
-// 背面手写(金句 + uni 这边同时发生的事 + 署名 + 时间戳)。demo 阶段 hardcode,
+// "于你给你拍了张照":点相机 → 一张宽幅拍立得摇出。正面 POV 自拍(按情绪变),
+// 背面手写(金句 + 于你这边同时发生的事 + 署名 + 时间戳)。demo 阶段 hardcode,
 // 情绪档可手动左右切换。TODO(素材):front 图先用现有形象占位,待换成情绪自拍图。
 type Mood = {
   key: string;
@@ -84,21 +82,21 @@ const MOODS: Mood[] = [
   {
     key: "down",
     label: "有点低落",
-    img: "/uni/polaroid-down.png",
+    img: "/yewne/polaroid-down.png",
     caption: "今天有点重，对吧。",
     quote: "不是所有问题都要今晚解决，\n今晚的任务，只是好好活到明天。",
   },
   {
     key: "anxious",
     label: "有点焦虑",
-    img: "/uni/polaroid-anxious.png",
+    img: "/yewne/polaroid-anxious.png",
     caption: "脑子转太快了，先停一下。",
     quote: "今日份 CPU 过热，\n先关机散热十分钟。",
   },
   {
     key: "calm",
     label: "很平静",
-    img: "/uni/polaroid-calm.png",
+    img: "/yewne/polaroid-calm.png",
     caption: "这样，就很好。",
     quote: "你今天已经做得够多了，\n剩下的，交给明天。",
   },
@@ -106,9 +104,8 @@ const MOODS: Mood[] = [
 
 // 每个形象的生活背景设定:署名 + "我这边同时发生的事"(把你的时刻嵌进 ta 的世界)
 const PERSONA_LIFE: Record<Persona, { sign: string; world: string }> = {
-  momo: { sign: "momo", world: "你在深夜里发呆的时候，我这边刚泡好今早的第一杯茶。" },
-  iris: { sign: "Iris", world: "你皱着眉的时候，我这边刚下过一场短雨，窗台上还挂着水珠。" },
-  rocky: { sign: "Rocky", world: "你发着呆的时候，我在山脚下把炉子生上了，火正慢慢旺起来。" },
+  youyou: { sign: "优优", world: "你皱着眉的时候，我这边刚下过一场短雨，窗台上还挂着水珠。" },
+  nini: { sign: "妮妮", world: "你发着呆的时候，我在山脚下把炉子生上了，火正慢慢旺起来。" },
 };
 
 function makeStamp() {
@@ -120,11 +117,11 @@ function makeStamp() {
   return { date: `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())}`, flavor };
 }
 
-export default function UniChatPage() {
+export default function YewneChatPage() {
   const [scene, setScene] = useState<Scene | null>(null);
-  const [persona, setPersona] = useState<Persona>("rocky");
+  const [persona, setPersona] = useState<Persona>("nini");
   const [input, setInput] = useState("");
-  const [reply, setReply] = useState<string>(PERSONA_GREETINGS.rocky);
+  const [reply, setReply] = useState<string>(PERSONA_GREETINGS.nini);
   const [replyKey, setReplyKey] = useState(0);
   const [loading, setLoading] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -367,7 +364,7 @@ export default function UniChatPage() {
     } catch (err) {
       if (ctrl.signal.aborted) return;
       setError(
-        err instanceof MomoApiError
+        err instanceof YewneApiError
           ? `连接后端失败（${err.status ?? "网络"}）`
           : err instanceof Error
             ? err.message
@@ -402,10 +399,10 @@ export default function UniChatPage() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Caveat:wght@600;700&family=Patrick+Hand&display=swap');
         .font-hand { font-family: 'ZCOOL KuaiLe', cursive; }
-        .font-uni  { font-family: 'Caveat', cursive; }
+        .font-yewne  { font-family: 'Caveat', cursive; }
         .font-kid  { font-family: 'Patrick Hand', cursive; }
-        @keyframes uni-fade-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        .uni-fade-in { animation: uni-fade-in 420ms ease-out both; }
+        @keyframes yewne-fade-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .yewne-fade-in { animation: yewne-fade-in 420ms ease-out both; }
 
         /* 拍立得:摇出入场 + 3D 翻面 + 快门闪光 */
         .pol-scene { perspective: 1400px; }
@@ -447,7 +444,7 @@ export default function UniChatPage() {
       {/* 顶部:返回 + 人格切换 */}
       <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-6 py-5 sm:px-10">
         <Link
-          href="/uni"
+          href="/yewne"
           className="inline-flex items-center gap-1.5 font-hand text-lg text-[#504437]/55 transition-colors hover:text-[#504437]"
           style={{ filter: "url(#crayon-soft)" }}
         >
@@ -481,7 +478,7 @@ export default function UniChatPage() {
             <div style={{ WebkitMaskImage: CHAR_MASK, maskImage: CHAR_MASK, WebkitMaskSize: "100% 100%", maskSize: "100% 100%", WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat" }}>
               <Image
                 src={CHAR_IMG[charState]}
-                alt="uni"
+                alt="于你"
                 width={1448}
                 height={1086}
                 priority
@@ -496,7 +493,7 @@ export default function UniChatPage() {
         <section className="flex flex-1 flex-col justify-center gap-10 px-8 pb-10 md:pr-16 md:pl-4">
           <p
             key={replyKey}
-            className="uni-fade-in min-h-[3em] max-w-xl font-hand text-2xl leading-relaxed text-[#504437]/75 sm:text-3xl"
+            className="yewne-fade-in min-h-[3em] max-w-xl font-hand text-2xl leading-relaxed text-[#504437]/75 sm:text-3xl"
             style={{ filter: "url(#crayon)" }}
           >
             {focalText}
@@ -562,7 +559,7 @@ export default function UniChatPage() {
                     type="button"
                     onClick={handleTakePolaroid}
                     disabled={polaroidLoading}
-                    aria-label="uni 给你拍张照"
+                    aria-label="于你给你拍张照"
                     className="flex h-9 w-9 shrink-0 items-center justify-center text-[#504437]/70 transition-colors hover:text-[#d66e76] disabled:opacity-60"
                   >
                     {polaroidLoading ? (
@@ -725,7 +722,7 @@ export default function UniChatPage() {
                 {/* 正面:POV 自拍 */}
                 <div className="pol-face absolute inset-0 flex flex-col rounded-[7px] bg-[#fbf7ee] p-3 pb-0 shadow-[0_22px_55px_rgba(60,45,30,0.4)]">
                   <div className="relative flex-1 overflow-hidden bg-[#ece2cd]">
-                    <Image src={MOODS[moodIndex].img} alt="uni" fill sizes="420px" className="object-cover" />
+                    <Image src={MOODS[moodIndex].img} alt="于你" fill sizes="420px" className="object-cover" />
                     <div
                       className="pointer-events-none absolute inset-0"
                       style={{ backgroundImage: GRAIN_FINE, backgroundSize: "140px 140px", opacity: 0.35, mixBlendMode: "multiply" }}
@@ -735,11 +732,11 @@ export default function UniChatPage() {
                     <span className="font-hand text-lg text-[#504437]/85" style={{ filter: "url(#crayon-soft)" }}>
                       {MOODS[moodIndex].caption}
                     </span>
-                    <span className="font-uni text-xl text-[#504437]/45">{stamp.date}</span>
+                    <span className="font-yewne text-xl text-[#504437]/45">{stamp.date}</span>
                   </div>
                 </div>
 
-                {/* 背面:uni 写给你的话 */}
+                {/* 背面:于你写给你的话 */}
                 <div className="pol-face pol-back absolute inset-0 flex flex-col rounded-[7px] bg-[#fbf7ee] p-6 shadow-[0_22px_55px_rgba(60,45,30,0.4)]">
                   <div
                     className="pointer-events-none absolute inset-0 rounded-[7px]"
@@ -756,7 +753,7 @@ export default function UniChatPage() {
                       {PERSONA_LIFE[persona].world}
                     </p>
                     <div className="mt-auto flex items-end justify-between pt-4">
-                      <span className="font-uni text-3xl text-[#d66e76]" style={{ filter: "url(#crayon-soft)" }}>
+                      <span className="font-yewne text-3xl text-[#d66e76]" style={{ filter: "url(#crayon-soft)" }}>
                         {PERSONA_LIFE[persona].sign}
                       </span>
                       <span className="font-hand text-xs text-[#504437]/45">

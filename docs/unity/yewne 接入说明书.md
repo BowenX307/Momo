@@ -1,7 +1,8 @@
-# uni · Unity 场景端接入说明书
+# 于你 Yewne · Unity 场景端接入说明书
 
-> 版本 2026-07-14 · 后端已上线,可直接联调
-> 本说明书配套文件:`UniClient.cs`(接入用的客户端脚本)
+> 版本 2026-07-16 · 后端已上线,可直接联调
+> ⚠️ 本版起项目由 uni 更名为**于你 Yewne**,人格 key 由 `iris`/`rocky` 改为 `youyou`(优优)/`nini`(妮妮),`momo` 已移除;脚本类名 `UniClient`/`UniState` 相应改为 `YewneClient`/`YewneState`。从旧版升级时请整体替换脚本并更新 persona 取值。
+> 本说明书配套文件:`YewneClient.cs`(接入用的客户端脚本)、`YewneWebGL.jslib`(仅 WebGL 构建需要)
 
 ---
 
@@ -23,16 +24,17 @@
 
 ## 一、这是什么
 
-uni 是一个情绪陪伴 AI。用户对小人说话,后端会:**理解这句话 → 生成回答 → 合成语音 → 判断用户情绪 → 决定小人该做什么反应**,然后把结果一次性交给你,由 Unity 里的小人"说"出来、"演"出来。
+于你 Yewne 是一个情绪陪伴 AI。用户对小人说话,后端会:**理解这句话 → 生成回答 → 合成语音 → 判断用户情绪 → 决定小人该做什么反应**,然后把结果一次性交给你,由 Unity 里的小人"说"出来、"演"出来。
 
 **你只需要对接一个接口。** 一次请求,同时拿到「回答文字」「回答语音」「用户情绪」「小人反应动画」。
 
-配套的 `UniClient.cs` 已经把调接口、拆数据、播语音、切状态全部封装好,你基本不用碰网络代码。
+配套的 `YewneClient.cs` 已经把调接口、拆数据、播语音、切状态全部封装好,你基本不用碰网络代码。
 
 | 交付物 | 说明 |
 |---|---|
-| `uni 接入说明书.md` | 本文件 |
-| `UniClient.cs` | Unity 客户端脚本,拖进 `Assets/` 即用 |
+| `yewne 接入说明书.md` | 本文件 |
+| `YewneClient.cs` | Unity 客户端脚本,拖进 `Assets/` 即用 |
+| `YewneWebGL.jslib` | 仅出 WebGL 包时需要,放进 `Assets/Plugins/`(见[第七节](#七播放语音base64--audioclip)) |
 
 **服务端地址:`https://uniai.net.cn`**(已部署,脚本内已默认配置)。
 Unity 端**无需任何密钥、无需安装任何依赖**。
@@ -41,20 +43,20 @@ Unity 端**无需任何密钥、无需安装任何依赖**。
 
 ## 二、五分钟接入
 
-1. 把 `UniClient.cs` 拖进 Unity 工程的 `Assets/` 目录。
-2. 场景里新建一个空物体,挂上 `UniClient` 组件。
+1. 把 `YewneClient.cs` 拖进 Unity 工程的 `Assets/` 目录(要出 WebGL 包的话,再把 `YewneWebGL.jslib` 放进 `Assets/Plugins/`)。
+2. 场景里新建一个空物体,挂上 `YewneClient` 组件。
 3. 把小人的 `AudioSource` 拖进组件的 **Audio Source** 槽位。
 4. 在你自己的脚本里订阅事件,并在用户说完话时调用 `Say()`:
 
 ```csharp
 // 初始化时订阅一次
-uniClient.OnStateChanged += s => animator.SetInteger("state", (int)s); // 0待机 1思考 2说话
-uniClient.OnReaction     += r => PlayReaction(r);                      // 小人反应动画
-uniClient.OnEmotion      += e => { /* 用户情绪,想用就用 */ };
-uniClient.OnReply        += t => subtitle.text = t;                    // 字幕
+yewneClient.OnStateChanged += s => animator.SetInteger("state", (int)s); // 0待机 1思考 2说话
+yewneClient.OnReaction     += r => PlayReaction(r);                      // 小人反应动画
+yewneClient.OnEmotion      += e => { /* 用户情绪,想用就用 */ };
+yewneClient.OnReply        += t => subtitle.text = t;                    // 字幕
 
 // 用户说完一句话时调用,剩下的它全包了
-uniClient.Say("今天好累啊");
+yewneClient.Say("今天好累啊");
 ```
 
 调用 `Say()` 后,小人会自动:**进入思考 → 播反应动画 + 说出回答 → 回到待机**。上下文由脚本内部维护,你不用管。
@@ -73,7 +75,7 @@ uniClient.Say("今天好累啊");
 ① 用户说完话(语音转文字,或直接打字)
         │  文字
         ▼
-② UniClient 把这句话发给后端  ← 唯一和服务器打交道的一步
+② YewneClient 把这句话发给后端  ← 唯一和服务器打交道的一步
         │
         ▼
 ③ 后端一次性算好,打包返回:
@@ -83,7 +85,7 @@ uniClient.Say("今天好累啊");
         · 小人反应   "关心"     ← 小人该演什么动画
         │
         ▼
-④ UniClient 拿到包裹:播反应动画 + 播语音 + 抛字幕
+④ YewneClient 拿到包裹:播反应动画 + 播语音 + 抛字幕
         │
         ▼
 ⑤ 语音播完,小人回到待机,等下一句
@@ -96,7 +98,7 @@ uniClient.Say("今天好累啊");
 
 ## 四、接口详解:请求与响应字段
 
-> 正常情况下 `UniClient.cs` 已经封装好,以下仅供你需要自定义时查阅。
+> 正常情况下 `YewneClient.cs` 已经封装好,以下仅供你需要自定义时查阅。
 
 | | |
 |---|---|
@@ -110,7 +112,7 @@ uniClient.Say("今天好累啊");
 ```json
 {
   "user_text": "今天好累啊，什么都不想做",
-  "persona": "iris",
+  "persona": "youyou",
   "scene": "",
   "history": []
 }
@@ -119,7 +121,7 @@ uniClient.Say("今天好累啊");
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `user_text` | string | ✅ | 用户这一句话 |
-| `persona` | `"momo"` \| `"iris"` \| `"rocky"` | 否 | 人格,默认 `momo`。切人格时清空 `history` |
+| `persona` | `"youyou"` \| `"nini"` | 否 | 人格,默认 `nini`(妮妮)。切人格时清空 `history` |
 | `scene` | string | 否 | **第一句留空**(`""` 即可),后端自动判断场景;之后把响应里的 `scene` 原样带回来,可省一次模型调用,**后续每轮快约 1 秒** |
 | `history` | array | 否 | 最近对话历史,最多 20 条(10 轮),**不含本轮 `user_text`** |
 
@@ -172,7 +174,7 @@ uniClient.Say("今天好累啊");
 
 ## 五、三个状态:待机 / 思考 / 说话
 
-这三个状态**不需要问服务器**,`UniClient` 已经按请求的生命周期帮你切好,你只要响应 `OnStateChanged`:
+这三个状态**不需要问服务器**,`YewneClient` 已经按请求的生命周期帮你切好,你只要响应 `OnStateChanged`:
 
 | 状态(枚举值) | 什么时候 | 小人 |
 |---|---|---|
@@ -211,29 +213,28 @@ uniClient.Say("今天好累啊");
 
 | 人格 | 后端可能返回的 reaction |
 |---|---|
-| **iris**(直率爽朗) | 开心 / 伤心 / 疑惑 / 肯定 / 否定 —— 无"关心" |
-| **rocky**(温柔知性) | 开心 / 伤心 / 疑惑 / 关心 —— 无"肯定 / 否定" |
-| **momo** | 暂无动画,`reaction` 恒为空串 → 播 Idle |
+| **youyou / 优优**(直率爽朗) | 开心 / 伤心 / 疑惑 / 肯定 / 否定 —— 无"关心" |
+| **nini / 妮妮**(温柔知性) | 开心 / 伤心 / 疑惑 / 关心 —— 无"肯定 / 否定" |
 
-> 如果之后补了动画(比如 iris 加"关心"、momo 出整套),告诉后端,后端放开对应人格的取值即可,Unity 端代码不用改。
+> 如果之后补了动画(比如优优加"关心"),告诉后端,后端放开对应人格的取值即可,Unity 端代码不用改。
 
 ### 接入示例
 
 ```csharp
-uniClient.OnReaction += reaction =>
+yewneClient.OnReaction += reaction =>
 {
     // reaction 为 "开心"/"伤心"/"疑惑"/"肯定"/"否定"/"关心" 或 ""
     string clip = string.IsNullOrEmpty(reaction) ? "Idle" : reaction;
     _pendingReactionClip = clip;   // 存起来,等进入 Speaking 状态时播
 };
 
-uniClient.OnStateChanged += s =>
+yewneClient.OnStateChanged += s =>
 {
     switch (s)
     {
-        case UniState.Idle:     animator.Play("Idle");                break;
-        case UniState.Thinking: animator.Play("Idle");                break; // 或思考动画
-        case UniState.Speaking: animator.Play(_pendingReactionClip);  break; // 播反应动画
+        case YewneState.Idle:     animator.Play("Idle");                break;
+        case YewneState.Thinking: animator.Play("Idle");                break; // 或思考动画
+        case YewneState.Speaking: animator.Play(_pendingReactionClip);  break; // 播反应动画
     }
 };
 ```
@@ -244,12 +245,12 @@ uniClient.OnStateChanged += s =>
 
 ## 七、播放语音:base64 → AudioClip
 
-> `UniClient.cs` 已内置此逻辑,以下说明其原理,便于你排查。
+> `YewneClient.cs` 已内置此逻辑,以下说明其原理,便于你排查。
 
-Unity 不能直接从内存解 MP3,需**先落临时文件再加载**:
+Unity 不能直接从内存解 MP3。桌面/手机上需**先落临时文件再加载**:
 
 ```csharp
-var path = Path.Combine(Application.temporaryCachePath, "uni_reply.mp3");
+var path = Path.Combine(Application.temporaryCachePath, "yewne_reply.mp3");
 File.WriteAllBytes(path, Convert.FromBase64String(base64));
 
 using var req = UnityWebRequestMultimedia.GetAudioClip("file://" + path, AudioType.MPEG);
@@ -258,19 +259,26 @@ audioSource.clip = DownloadHandlerAudioClip.GetContent(req);
 audioSource.Play();
 ```
 
-**口型同步**:调用 `uniClient.CurrentMouthOpen()`,返回 0~1 的实时音量,可直接驱动嘴部开合幅度。无需额外接口。
+**口型同步**:调用 `yewneClient.CurrentMouthOpen()`,返回 0~1 的实时张嘴幅度,可直接驱动嘴部开合。无需额外接口。
+
+### WebGL 构建注意
+
+WebGL 上音频走浏览器的 Web Audio,和其他平台有三点不同(`YewneClient.cs` 已内置处理,前两点无需你写代码):
+
+1. **没有本地文件系统**,上面 `file://` 那条路走不通。脚本改为把 base64 转成 Blob URL 交给浏览器解码,需要把 `YewneWebGL.jslib` 放进 **`Assets/Plugins/`**(必须是这个目录)。
+2. **`AudioSource.GetOutputData` 不支持**(拿到的全是 0),所以 WebGL 下 `CurrentMouthOpen()` 用平滑噪声模拟说话节奏,不是真实音量——卡通角色视觉上足够自然。
+3. **浏览器自动播放限制**:页面在用户点击过至少一次之前不允许出声。Demo 里用户先要点输入框/按钮才会触发回复,天然满足;若做成"一进页面就自动打招呼"则第一句会没声音。
 
 ---
 
 ## 八、人格
 
-在 `UniClient` 组件的 Inspector 面板改 `persona` 字段。三个人格的**措辞风格与语音音色都不同**:
+在 `YewneClient` 组件的 Inspector 面板改 `persona` 字段。两个人格的**措辞风格与语音音色都不同**:
 
 | 取值 | 人格 |
 |---|---|
-| `momo` | 温柔水母,稳定陪伴(默认;暂无反应动画) |
-| `iris` | 高洞察、略毒舌的少年,少年男声 |
-| `rocky` | 白斗篷小精灵,知性直接 |
+| `youyou` | 优优:高洞察、略毒舌的少年,少年男声 |
+| `nini` | 妮妮:白斗篷小精灵,知性直接(默认) |
 
 切换人格时脚本会自动清空对话上下文。
 
@@ -283,7 +291,7 @@ audioSource.Play();
 ```bash
 curl -X POST https://uniai.net.cn/v1/chat/demo \
   -H "Content-Type: application/json" \
-  -d '{"user_text":"我觉得我什么都做不好","persona":"iris"}'
+  -d '{"user_text":"我觉得我什么都做不好","persona":"youyou"}'
 ```
 
 正常会返回一段 JSON,含 `reply`(文本)、`emotion`(用户情绪)、`reaction`(小人反应)、`audio_base64`(语音)。`audio_base64` 很长属正常。

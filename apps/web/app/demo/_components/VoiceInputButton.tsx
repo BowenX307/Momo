@@ -12,12 +12,12 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { fetchHealth, fetchTranscribe, MomoApiError } from "@/lib/api/momo";
+import { fetchHealth, fetchTranscribe, YewneApiError } from "@/lib/api/yewne";
 
 export type VoicePhase = "idle" | "recording" | "transcribing";
 
 function formatTranscribeError(err: unknown): string {
-  if (err instanceof MomoApiError) {
+  if (err instanceof YewneApiError) {
     if (err.status === undefined) {
       const hint = err.message.toLowerCase();
       if (hint.includes("failed to fetch") || hint.includes("network")) {
@@ -560,7 +560,7 @@ export function VoiceInputButton({
     }
   }, [cleanupSpeech, onError, onTranscript, setPhaseAndNotify]);
 
-  // MOMO 说完后自动重听：trigger 递增时触发
+  // 于你说完后自动重听：trigger 递增时触发
   const prevTriggerRef = useRef(startTrigger ?? 0);
   useEffect(() => {
     const prev = prevTriggerRef.current;

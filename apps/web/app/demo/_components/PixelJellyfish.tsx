@@ -91,26 +91,26 @@ export function PixelJellyfish({ thinking = false, degraded = false, size = 168 
     width: size,
     height: (size * h) / w,
     animation: thinking
-      ? "momo-breathe 2.4s ease-in-out infinite"
-      : "momo-breathe 5s ease-in-out infinite",
+      ? "yewne-breathe 2.4s ease-in-out infinite"
+      : "yewne-breathe 5s ease-in-out infinite",
     imageRendering: "pixelated",
   };
 
   return (
     <div style={wrapperStyle} aria-hidden="true">
       <style>{`
-        @keyframes momo-breathe {
+        @keyframes yewne-breathe {
           0%, 100% { transform: translateY(0) scale(1); }
           50% { transform: translateY(-3px) scale(1.03); }
         }
-        @keyframes momo-blink {
+        @keyframes yewne-blink {
           0%, 92%, 100% { transform: scaleY(1); }
           94%, 98% { transform: scaleY(0.05); }
         }
-        .momo-eye {
+        .yewne-eye {
           transform-origin: center;
           transform-box: fill-box;
-          animation: momo-blink 6.5s ease-in-out infinite;
+          animation: yewne-blink 6.5s ease-in-out infinite;
         }
       `}</style>
       <svg
@@ -134,7 +134,7 @@ export function PixelJellyfish({ thinking = false, degraded = false, size = 168 
                 width={PIXEL + 0.5}
                 height={PIXEL + 0.5}
                 fill={fill}
-                className={isEye ? "momo-eye" : undefined}
+                className={isEye ? "yewne-eye" : undefined}
               />
             );
           }),

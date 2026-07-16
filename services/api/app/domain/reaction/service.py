@@ -1,16 +1,16 @@
-"""小人反应判断：据 uni 刚写好的这句回答，选一个该播的动画反应。
+"""小人反应判断：据于你刚写好的这句回答，选一个该播的动画反应。
 
 给 Unity / 网页用：让后端直接把"该演哪个动作"算好返回，前端拿到 `reaction` 直接
 play 对应动画，不用自己从情绪去映射。
 
-为什么据"回答"而不是"用户情绪"选：像"肯定 / 否定"这种，取决于 uni 这句到底是在
+为什么据"回答"而不是"用户情绪"选：像"肯定 / 否定"这种，取决于于你这句到底是在
 认同还是在反驳用户，光看用户情绪分不出来；而写回答的模型最清楚自己刚说的是什么。
 
 设计要点（和拍立得 aftercare 一致）：
 - **自包含**，直接 httpx 调 DeepSeek，只读 settings 已有字段，**不 import 分叉的
   deepseek.py**，部署零牵连。
 - **每个人格只能选它真有动画的那几个反应**（见 `_REACTION_SETS`），否则会 play 空。
-- 任何失败 / momo / 空回答 都静默返回 ""，前端遇到空就回落 Idle。
+- 任何失败 / 空回答 都静默返回 ""，前端遇到空就回落 Idle。
 """
 
 import httpx
@@ -18,10 +18,9 @@ import httpx
 from app.core.config import settings
 
 # 每个人格实际做了动画的反应集合（据美术给的动画表）。
-# momo 暂无任何动画 → 不在表里 → 永远返回 ""。
 _REACTION_SETS: dict[str, tuple[str, ...]] = {
-    "iris": ("开心", "伤心", "疑惑", "肯定", "否定"),   # iris 没有"关心"
-    "rocky": ("开心", "伤心", "疑惑", "关心"),          # rocky 没有"肯定/否定"
+    "youyou": ("开心", "伤心", "疑惑", "肯定", "否定"),   # 优优没有"关心"
+    "nini": ("开心", "伤心", "疑惑", "关心"),             # 妮妮没有"肯定/否定"
 }
 
 # 每个反应的含义，喂给模型好让它对着回答判断。
@@ -36,7 +35,7 @@ _MEANINGS: dict[str, str] = {
 
 
 async def detect_reaction(reply: str, persona: str) -> str:
-    """据 uni 这句回答，从该人格可用的反应里选一个。失败/无适用则返回 ""。"""
+    """据于你这句回答，从该人格可用的反应里选一个。失败/无适用则返回 ""。"""
     allowed = _REACTION_SETS.get(persona)
     if not allowed or not reply.strip() or not settings.deepseek_api_key:
         return ""

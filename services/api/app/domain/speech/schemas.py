@@ -17,7 +17,7 @@ class SynthesizeRequest(BaseModel):
     """POST /v1/speech/synthesize 请求。"""
 
     text: str = Field(
-        ..., min_length=1, max_length=2000, description="要合成的 MOMO 回复文本"
+        ..., min_length=1, max_length=2000, description="要合成的于你回复文本"
     )
     scene: Scene | None = Field(
         default=None,

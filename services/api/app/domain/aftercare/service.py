@@ -17,9 +17,8 @@ from app.domain.aftercare.schemas import AftercareRequest, AftercareResponse, Mo
 
 # 人格口吻提示（内联，避免 import 分叉的 deepseek.py）
 _PERSONA_VOICE: dict[str, str] = {
-    "momo": "你是 momo，温柔的小水母，语气轻柔、稳稳地陪着。",
-    "iris": "你是 Iris，高洞察、有点毒嘴的少年朋友。可以先俏皮损一句，但落点一定要接住情绪、是温柔的。",
-    "rocky": "你是 Rocky，白斗篷小精灵，知性直接，擅长把大问题变小、给一个具体的小台阶。",
+    "youyou": "你是优优，高洞察、有点毒嘴的少年朋友。可以先俏皮损一句，但落点一定要接住情绪、是温柔的。",
+    "nini": "你是妮妮，白斗篷小精灵，知性直接，擅长把大问题变小、给一个具体的小台阶。",
 }
 
 # 每个情绪档的兜底金句（模型失败时用，和前端 curated 一致的调性）
@@ -31,7 +30,7 @@ _FALLBACK: dict[str, str] = {
 
 _VALID_MOODS: tuple[Mood, ...] = ("down", "anxious", "calm")
 
-_SYSTEM = """你是陪伴体 uni 的"拍立得售后"生成器。用户刚和你聊完，你要根据这次对话，
+_SYSTEM = """你是陪伴体于你的"拍立得售后"生成器。用户刚和你聊完，你要根据这次对话，
 产出一张拍立得的背面内容：先判断用户此刻的整体情绪，再写一句写给 ta 的金句。
 
 只输出一个 JSON 对象，不要任何解释、不要代码块围栏：
@@ -75,9 +74,9 @@ async def generate_aftercare(request: AftercareRequest) -> AftercareResponse:
     if not request.history or not settings.deepseek_api_key:
         return _fallback()
 
-    persona_voice = _PERSONA_VOICE.get(request.persona.value, _PERSONA_VOICE["rocky"])
+    persona_voice = _PERSONA_VOICE.get(request.persona.value, _PERSONA_VOICE["nini"])
     convo = "\n".join(
-        f"{'用户' if m.role == 'user' else 'uni'}：{m.content}" for m in request.history
+        f"{'用户' if m.role == 'user' else '于你'}：{m.content}" for m in request.history
     )
     messages = [
         {"role": "system", "content": f"{_SYSTEM}\n\n【人格】{persona_voice}"},

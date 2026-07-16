@@ -1,5 +1,5 @@
 """
-MOMO 声音试听脚本
+于你声音试听脚本
 运行：uv run python try_voices.py
 会在 ./voice_samples/ 目录下生成 MP3，用 Finder 打开直接双击试听。
 """
@@ -18,7 +18,7 @@ load_dotenv()
 API_KEY = os.getenv("DOUBAO_TTS_API_KEY", "")
 ENDPOINT = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
 
-# MOMO 典型台词——包含停顿、语气词，能充分暴露人机感
+# 于你典型台词——包含停顿、语气词，能充分暴露人机感
 SAMPLE_TEXT = "嗯，我在呢。不管今天发生了什么，你都可以跟我说。有时候把心里压着的东西说出来，会好受一点的。"
 
 # 候选声音：(label, voice_id, model)
@@ -42,7 +42,7 @@ OUT_DIR = Path("voice_samples")
 
 async def render(label: str, voice: str, model: str) -> None:
     payload = {
-        "user": {"uid": "momo_test"},
+        "user": {"uid": "yewne_test"},
         "req_params": {
             "text": SAMPLE_TEXT,
             "speaker": voice,

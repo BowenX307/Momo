@@ -4,40 +4,40 @@ import Link from "next/link";
 import { Menu } from "./_components/Menu";
 
 /**
- * /uni —— 招商 / 展示 landing page。
+ * /yewne —— 招商 / 展示 landing page。
  *
  * 视觉签名:蜡笔手绘 × 考究版式。hero 讲一个情绪:
- * "那些没说出口的" → 安静的 uni 接住它 → uni 在。
+ * "那些没说出口的" → 安静的于你接住它 → 于你在。
  *
- * 设计原则:光滑的 uni 小人 = 在场;潦草的蜡笔字 = 没说出口的真实情绪。
+ * 设计原则:光滑的于你小人 = 在场;潦草的蜡笔字 = 没说出口的真实情绪。
  * 反差本身就是意义。中文蜡笔感用 Google 手写体字体直接渲染,零素材。
  */
 
-export default function UniLanding() {
+export default function YewneLanding() {
   return (
     <div className="relative min-h-dvh w-full overflow-x-hidden bg-[#f0e7d6] text-stone-800">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Caveat:wght@600;700&family=Source+Serif+4:wght@400;500&display=swap');
 
         .font-hand   { font-family: 'ZCOOL KuaiLe', cursive; }
-        .font-uni    { font-family: 'Caveat', cursive; }
+        .font-yewne    { font-family: 'Caveat', cursive; }
         .font-claude { font-family: 'Source Serif 4', Georgia, serif; }
 
-        @keyframes uni-heart {
+        @keyframes yewne-heart {
           0%, 100% { opacity: .35; transform: scale(1); }
           50%      { opacity: .7;  transform: scale(1.15); }
         }
-        @keyframes uni-rise {
+        @keyframes yewne-rise {
           from { opacity: 0; transform: translateY(14px); }
           to   { opacity: 1; transform: translateY(0); }
         }
-        .uni-rise { animation: uni-rise 900ms cubic-bezier(0.16,1,0.3,1) both; }
-        @keyframes uni-fade { from { opacity: 0; } to { opacity: 1; } }
-        .uni-fade { animation: uni-fade 240ms ease-out both; }
-        .uni-heart-glow { animation: uni-heart 3.5s ease-in-out infinite; }
+        .yewne-rise { animation: yewne-rise 900ms cubic-bezier(0.16,1,0.3,1) both; }
+        @keyframes yewne-fade { from { opacity: 0; } to { opacity: 1; } }
+        .yewne-fade { animation: yewne-fade 240ms ease-out both; }
+        .yewne-heart-glow { animation: yewne-heart 3.5s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) {
-          .uni-rise { animation: none; opacity: 1; transform: none; }
-          .uni-heart-glow { animation: none; opacity: .5; }
+          .yewne-rise { animation: none; opacity: 1; transform: none; }
+          .yewne-heart-glow { animation: none; opacity: .5; }
         }
       `}</style>
 
@@ -90,8 +90,8 @@ export default function UniLanding() {
             }}
           >
             <Image
-              src="/uni/uni-crayon-2.png"
-              alt="uni"
+              src="/yewne/yewne-crayon-2.png"
+              alt="于你"
               width={819}
               height={1024}
               priority
@@ -100,7 +100,7 @@ export default function UniLanding() {
           </div>
           {/* 心口柔光 */}
           <span
-            className="uni-heart-glow pointer-events-none absolute h-16 w-16 rounded-full"
+            className="yewne-heart-glow pointer-events-none absolute h-16 w-16 rounded-full"
             style={{
               left: "54%",
               top: "58%",
@@ -113,16 +113,16 @@ export default function UniLanding() {
 
         {/* 情绪标题:让 hero 有信息 */}
         <h1
-          className="uni-rise mt-9 font-hand text-balance text-center text-[32px] leading-snug text-[#504437]/75 sm:text-[40px]"
+          className="yewne-rise mt-9 font-hand text-balance text-center text-[32px] leading-snug text-[#504437]/75 sm:text-[40px]"
           style={{ animationDelay: "500ms", filter: "url(#crayon)" }}
         >
-          那些没说出口的，<span className="font-uni text-[#d66e76]/90">uni</span> 都在。
+          那些没说出口的，<span className="font-yewne text-[#d66e76]/90">Yewne</span> 都在。
         </h1>
 
         {/* CTA:外层做入场动画,内层 Link 控制静止透明度(父子 opacity 相乘) */}
-        <div className="uni-rise mt-5" style={{ animationDelay: "900ms" }}>
+        <div className="yewne-rise mt-5" style={{ animationDelay: "900ms" }}>
           <Link
-            href="/uni/chat"
+            href="/yewne/chat"
             className="group font-hand relative inline-flex flex-col items-center text-[26px] text-[#504437] opacity-70 transition hover:text-[#c2555e] hover:opacity-100"
             style={{ filter: "url(#crayon)" }}
           >

@@ -1,8 +1,8 @@
-# MOMO Web 记忆设计
+# 于你 Yewne · Web 记忆设计
 
 ## 目标
 
-Web 版对话在刷新页面后不丢失上下文。用户回来继续说，MOMO 还记得上一次聊到哪里。
+Web 版对话在刷新页面后不丢失上下文。用户回来继续说，于你还记得上一次聊到哪里。
 
 ---
 
@@ -28,7 +28,7 @@ interface PersistedSession {
 }
 ```
 
-key 固定为 `momo:session`。
+key 固定为 `yewne:session`。
 
 ### 读写时机
 
@@ -78,11 +78,11 @@ function clearSession(): void
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 小时
 
 function loadSession(): PersistedSession | null {
-  const raw = localStorage.getItem("momo:session");
+  const raw = localStorage.getItem("yewne:session");
   if (!raw) return null;
   const session = JSON.parse(raw) as PersistedSession;
   if (Date.now() - session.savedAt > SESSION_TTL_MS) {
-    localStorage.removeItem("momo:session");
+    localStorage.removeItem("yewne:session");
     return null;
   }
   return session;

@@ -1,10 +1,12 @@
-# MOMO 开发者上手指南
+# 于你 Yewne 开发者上手指南
+
+> 项目原名 uni / MOMO,因商标注册于 2026-07 更名为**于你 Yewne**(仓库目录名仍为 momo)。
 
 ## 这个项目是什么
 
-**MOMO** 是面向中文用户的情绪陪伴 AI App。
+**于你 Yewne** 是面向中文用户的情绪陪伴 AI App。
 
-不是心理治疗，不是泛聊机器人——**只做"有人在"这件事**：用户说出心情，MOMO 用温暖但不油腻的语言接住，帮 ta 命名情绪、打断内耗、在孤独时陪着。支持**语音对话**（说话进、语音回），有 3 个不同性格的陪伴体。
+不是心理治疗，不是泛聊机器人——**只做"有人在"这件事**：用户说出心情，于你用温暖但不油腻的语言接住，帮 ta 命名情绪、打断内耗、在孤独时陪着。支持**语音对话**（说话进、语音回），有 2 个不同性格的陪伴体。
 
 现状：**Demo 阶段**。核心链路跑通（语音 ↔ 前端 ↔ 后端 ↔ DeepSeek LLM），线上 demo 在 `uniai.net.cn`。还没接数据库和多账号体系，会话历史暂存在浏览器 localStorage。
 
@@ -31,18 +33,17 @@ momo/
 | 语音识别 STT（Whisper） | `services/api/app/stt/whisper.py` |
 | Demo 页面 UI | `apps/web/app/demo/page.tsx` |
 | 语音录入 / 打断 / VAD | `apps/web/app/demo/_components/VoiceInputButton.tsx` |
-| 语音播放（含手机端兼容） | `apps/web/lib/speech/playMomoSpeech.ts` |
-| 前端 API 类型 / 请求封装 | `apps/web/lib/api/momo.ts` |
+| 语音播放（含手机端兼容） | `apps/web/lib/speech/playYewneSpeech.ts` |
+| 前端 API 类型 / 请求封装 | `apps/web/lib/api/yewne.ts` |
 
 ---
 
-## 三个人格
+## 两个人格
 
 用户可在前端切换，每个有独立的 system prompt（都在 `deepseek.py`）：
 
-- **MOMO** —— 温柔、稳稳陪着，默认人格
-- **Iris** —— 直接、带点毒舌，但毒完会接住情绪
-- **Rocky** —— 把大问题拆小，帮你迈出第一步
+- **优优**（key: `youyou`）—— 直接、带点毒舌，但毒完会接住情绪
+- **妮妮**（key: `nini`）—— 把大问题拆小，帮你迈出第一步，默认人格
 
 切换人格会重置当前会话。
 
@@ -126,5 +127,5 @@ AI 说话时用户可**打断**（桌面/安卓靠说话自动打断，iOS 靠�
 
 - 后端报错先看终端日志（structlog JSON，key 很清晰）
 - 接口字段不匹配先看 `http://localhost:8000/docs`
-- 手机端语音有兼容性坑（尤其 iOS Safari 音频路由），改 `playMomoSpeech.ts` 前先问一下
+- 手机端语音有兼容性坑（尤其 iOS Safari 音频路由），改 `playYewneSpeech.ts` 前先问一下
 - 不确定的事直接问团队群

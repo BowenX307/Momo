@@ -1,6 +1,6 @@
-/** 播放 MOMO 语音回复；mock 时降级到浏览器 speechSynthesis。 */
+/** 播放于你语音回复；mock 时降级到浏览器 speechSynthesis。 */
 
-import type { SynthesizeResponse } from "@/lib/api/momo";
+import type { SynthesizeResponse } from "@/lib/api/yewne";
 
 // One reusable <audio> element, unlocked once inside a user gesture and then
 // reused (src swapped) for every chunk. This is the reliable iOS pattern:
@@ -54,7 +54,7 @@ export function unlockAudio(): void {
   } catch { /* ignore */ }
 }
 
-export function stopMomoSpeech(): void {
+export function stopYewneSpeech(): void {
   if (_elTeardown) {
     _elTeardown();
     _elTeardown = null;
@@ -119,7 +119,7 @@ function _playOneChunk(base64: string, contentType: string): Promise<void> {
     };
 
     const failsafe = setTimeout(done, 15_000);
-    // If a later chunk or stopMomoSpeech reuses the element, this resolves the
+    // If a later chunk or stopYewneSpeech reuses the element, this resolves the
     // current chunk's promise cleanly instead of leaving it hanging.
     _elTeardown = done;
 
@@ -148,11 +148,11 @@ function _playOneChunk(base64: string, contentType: string): Promise<void> {
 }
 
 export function playBase64Audio(base64: string, contentType: string): Promise<void> {
-  stopMomoSpeech();
+  stopYewneSpeech();
   return _playOneChunk(base64, contentType);
 }
 
-export async function playMomoReply(
+export async function playYewneReply(
   text: string,
   synth: Pick<SynthesizeResponse, "audio_base64" | "content_type" | "is_mock">,
 ): Promise<void> {
@@ -201,5 +201,5 @@ export function stopAudioQueue(): void {
   _queueGen++;
   _tail = Promise.resolve();
   _hadRealAudio = false;
-  stopMomoSpeech();
+  stopYewneSpeech();
 }

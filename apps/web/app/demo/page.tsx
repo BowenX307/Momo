@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * /demo —— MOMO 陪伴体的最小可演示页面。
+ * /demo —— 于你陪伴体的最小可演示页面。
  *
  * 设计目标：
  * - 不是 chat box。屏幕中心是一个像素小水母（陪伴体），它"在那里"。
- * - 最新的 MOMO 回复是焦点（大字居中），之前几轮以小气泡形式保留在上方。
+ * - 最新的于你回复是焦点（大字居中），之前几轮以小气泡形式保留在上方。
  * - 场景选择放在底部，措辞用第一人称，更柔和。
  * - 危机/降级/错误状态用回复下方一行小字表达，不弹窗。
  * - 调试细节统统藏进右下角齿轮。
@@ -18,14 +18,14 @@ import {
   buildCurl,
   fetchChatDemoStream,
   fetchHealth,
-  MomoApiError,
+  YewneApiError,
   type ChatDemoRequest,
   type ChatDemoResponse,
   type HealthResponse,
   type HistoryMessage,
   type Persona,
   type Scene,
-} from "@/lib/api/momo";
+} from "@/lib/api/yewne";
 import {
   enqueueAudio,
   hadRealAudio,
@@ -33,7 +33,7 @@ import {
   stopAudioQueue,
   unlockAudio,
   whenQueueDone,
-} from "@/lib/speech/playMomoSpeech";
+} from "@/lib/speech/playYewneSpeech";
 
 import {
   clearSession,
@@ -53,15 +53,13 @@ import {
 } from "./_components/VoiceInputButton";
 
 const PERSONA_GREETINGS: Record<Persona, string> = {
-  momo: "我在的。无论是哪种心情，都可以慢慢说，我会一直在。",
-  iris: "来了？直接说吧，我在听。",
-  rocky: "我在。你可以直接说，不用想怎么开口。",
+  youyou: "来了？直接说吧，我在听。",
+  nini: "我在。你可以直接说，不用想怎么开口。",
 };
 
 const PERSONA_LABELS: Record<Persona, string> = {
-  momo: "MOMO",
-  iris: "Iris",
-  rocky: "Rocky",
+  youyou: "优优",
+  nini: "妮妮",
 };
 
 type ConvTurn = PersistedConvTurn;
@@ -70,9 +68,9 @@ export default function DemoPage() {
   // scene 由后端在第一句话上自动分类；此后整个会话都沿用，不再每轮重判。
   // null = 第一句话还没发过 / 用户尚未"开口定调"。
   const [scene, setScene] = useState<Scene | null>(null);
-  const [persona, setPersona] = useState<Persona>("rocky");
+  const [persona, setPersona] = useState<Persona>("nini");
   const [input, setInput] = useState("");
-  const [reply, setReply] = useState<string>(PERSONA_GREETINGS.rocky);
+  const [reply, setReply] = useState<string>(PERSONA_GREETINGS.nini);
   const [replyKey, setReplyKey] = useState(0);
   const [loading, setLoading] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -335,7 +333,7 @@ export default function DemoPage() {
     } catch (err) {
       if (ctrl.signal.aborted) return;
       const msg =
-        err instanceof MomoApiError
+        err instanceof YewneApiError
           ? `连接后端失败（${err.status ?? "网络"}）`
           : err instanceof Error
             ? err.message
@@ -361,20 +359,20 @@ export default function DemoPage() {
   return (
     <div className="relative flex min-h-dvh flex-1 flex-col bg-[#faf6f0] text-stone-900 dark:bg-[#1a1612] dark:text-stone-100">
       <style>{`
-        @keyframes momo-fade-in {
+        @keyframes yewne-fade-in {
           from { opacity: 0; transform: translateY(6px); }
           to   { opacity: 1; transform: translateY(0); }
         }
-        @keyframes momo-fade-up {
+        @keyframes yewne-fade-up {
           from { opacity: 0; transform: translateY(10px); }
           to   { opacity: 0.55; transform: translateY(0); }
         }
-        @keyframes momo-tentacle-think {
+        @keyframes yewne-tentacle-think {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.45; }
         }
-        .momo-history-turn {
-          animation: momo-fade-up 380ms ease-out both;
+        .yewne-history-turn {
+          animation: yewne-fade-up 380ms ease-out both;
         }
       `}</style>
 
@@ -382,12 +380,11 @@ export default function DemoPage() {
         <div>
           <h1 className="text-lg font-medium tracking-tight">{PERSONA_LABELS[persona]}</h1>
           <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
-            {persona === "iris" ? "有什么就说。" : "先把问题变小。"}
+            {persona === "youyou" ? "有什么就说。" : "先把问题变小。"}
           </p>
         </div>
         <div className="flex gap-1 rounded-xl bg-stone-100 p-1 dark:bg-stone-800">
-          {/* momo 已下线(保留为最初人格),不再作为可选项 */}
-          {(["iris", "rocky"] as Persona[]).map((p) => (
+          {(["youyou", "nini"] as Persona[]).map((p) => (
             <button
               key={p}
               type="button"
@@ -411,7 +408,7 @@ export default function DemoPage() {
         {emotion && !loading && (
           <div
             className="flex items-center gap-1.5 rounded-full bg-stone-100 px-3.5 py-1 dark:bg-stone-800"
-            style={{ animation: "momo-fade-in 380ms ease-out both" }}
+            style={{ animation: "yewne-fade-in 380ms ease-out both" }}
           >
             <span className="text-xs text-stone-400 dark:text-stone-500">感受到了</span>
             <span className="text-sm font-medium text-stone-600 dark:text-stone-300">{emotion}</span>
@@ -422,7 +419,7 @@ export default function DemoPage() {
         {recentTurns.length > 0 && (
           <div className="flex w-full max-w-md flex-col gap-3">
             {recentTurns.map((turn, i) => (
-              <div key={i} className="momo-history-turn flex flex-col gap-1 opacity-55">
+              <div key={i} className="yewne-history-turn flex flex-col gap-1 opacity-55">
                 <div className="flex justify-end">
                   <span className="max-w-[80%] rounded-2xl rounded-br-sm bg-[#e8e2da] px-3 py-1.5 text-xs leading-relaxed text-stone-600 dark:bg-stone-800 dark:text-stone-400">
                     {turn.userText}
@@ -444,7 +441,7 @@ export default function DemoPage() {
           <p
             key={replyKey}
             className="min-h-[3em] text-center text-base leading-relaxed text-stone-800 sm:text-lg dark:text-stone-100"
-            style={{ animation: "momo-fade-in 420ms ease-out both" }}
+            style={{ animation: "yewne-fade-in 420ms ease-out both" }}
           >
             {loading ? (
               <ThinkingPhrases variant="thinking" />

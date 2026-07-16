@@ -15,7 +15,7 @@ load_dotenv()
 API_KEY = os.getenv("DOUBAO_TTS_API_KEY", "")
 ENDPOINT = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
 
-# iris 毒嘴台词——听音色是否"轻快/少年/不成熟"
+# 优优(youyou)毒嘴台词——听音色是否"轻快/少年/不成熟"
 TEXT = "我知道你不是真的想睡,你只是不想面对明天。行吧,那就再赖一会儿,但别骗自己说这是休息。"
 
 # (label, voice_id)  —— 偏年轻/清爽/少年的男声候选

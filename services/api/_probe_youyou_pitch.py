@@ -1,5 +1,5 @@
 """给少年梓辛渲染不同 pitch,挑一个不低沉的。
-运行:uv run python _probe_iris_pitch.py → voice_samples/_pitch_*.mp3
+运行:uv run python _probe_youyou_pitch.py → voice_samples/_pitch_*.mp3
 """
 
 import asyncio

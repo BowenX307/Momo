@@ -1,5 +1,5 @@
 /**
- * MOMO 后端 API 客户端。
+ * 于你 Yewne 后端 API 客户端。
  *
  * Demo 阶段刻意只手抄一份与 `services/api` Pydantic 字段对齐的 TS 类型。
  * 等接口数 ≥3 个、且 mobile 端也要接入时，再统一抽到 `packages/shared-types`
@@ -16,7 +16,7 @@ export const SCENES = [
 
 export type Scene = (typeof SCENES)[number];
 
-export const PERSONAS = ["momo", "iris", "rocky"] as const;
+export const PERSONAS = ["youyou", "nini"] as const;
 export type Persona = (typeof PERSONAS)[number];
 
 export type SafetyFlag =
@@ -35,7 +35,7 @@ export interface ChatDemoRequest {
   /** 可选：每个会话第一句留空，让后端自动分类；后续轮把响应里的 scene 传回，
    * 避免每轮都跑一次分类（多 1 次 LLM 调用）。 */
   scene?: Scene | null;
-  /** AI 人格，默认 momo。切换人格时前端应重置会话。 */
+  /** AI 人格，默认 nini（妮妮）。切换人格时前端应重置会话。 */
   persona?: Persona;
   history?: HistoryMessage[];
 }
@@ -54,8 +54,8 @@ export interface ChatDemoResponse {
   audio_is_mock: boolean;
   /** 用户输入的情绪标签；空串表示未检测到 */
   emotion?: string;
-  /** 小人该播的反应动画，据本句回答判定；空串=无（momo/判定失败），前端回落 Idle。
-   * iris: 开心|伤心|疑惑|肯定|否定  rocky: 开心|伤心|疑惑|关心 */
+  /** 小人该播的反应动画，据本句回答判定；空串=无（判定失败），前端回落 Idle。
+   * youyou: 开心|伤心|疑惑|肯定|否定  nini: 开心|伤心|疑惑|关心 */
   reaction?: string;
 }
 
@@ -92,18 +92,18 @@ export interface TranscribeResponse {
 export const API_BASE: string =
   process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
 
-export class MomoApiError extends Error {
+export class YewneApiError extends Error {
   constructor(
     message: string,
     public readonly status?: number,
     public readonly body?: unknown,
   ) {
     super(message);
-    this.name = "MomoApiError";
+    this.name = "YewneApiError";
   }
 }
 
-/** 调用 /v1/chat/demo。失败抛 MomoApiError，调用方决定如何在 UI 表达。 */
+/** 调用 /v1/chat/demo。失败抛 YewneApiError，调用方决定如何在 UI 表达。 */
 export async function fetchChatDemo(
   payload: ChatDemoRequest,
   options: { signal?: AbortSignal; baseUrl?: string } = {},
@@ -118,7 +118,7 @@ export async function fetchChatDemo(
       signal: options.signal,
     });
   } catch (err) {
-    throw new MomoApiError(
+    throw new YewneApiError(
       err instanceof Error ? err.message : "network error",
     );
   }
@@ -130,7 +130,7 @@ export async function fetchChatDemo(
     } catch {
       body = await res.text().catch(() => undefined);
     }
-    throw new MomoApiError(`HTTP ${res.status}`, res.status, body);
+    throw new YewneApiError(`HTTP ${res.status}`, res.status, body);
   }
 
   return (await res.json()) as ChatDemoResponse;
@@ -162,7 +162,7 @@ export async function fetchAftercare(
     signal: options.signal,
   });
   if (!res.ok) {
-    throw new MomoApiError(`HTTP ${res.status}`, res.status);
+    throw new YewneApiError(`HTTP ${res.status}`, res.status);
   }
   return (await res.json()) as AftercareResponse;
 }
@@ -184,7 +184,7 @@ export async function fetchTranscribe(
       signal: options.signal,
     });
   } catch (err) {
-    throw new MomoApiError(
+    throw new YewneApiError(
       err instanceof Error ? err.message : "network error",
     );
   }
@@ -196,13 +196,13 @@ export async function fetchTranscribe(
     } catch {
       body = await res.text().catch(() => undefined);
     }
-    throw new MomoApiError(`HTTP ${res.status}`, res.status, body);
+    throw new YewneApiError(`HTTP ${res.status}`, res.status, body);
   }
 
   return (await res.json()) as TranscribeResponse;
 }
 
-/** 把 MOMO 回复合成为语音（MP3 base64）。 */
+/** 把于你回复合成为语音（MP3 base64）。 */
 export async function fetchSynthesize(
   payload: SynthesizeRequest,
   options: { signal?: AbortSignal; baseUrl?: string } = {},
@@ -217,7 +217,7 @@ export async function fetchSynthesize(
       signal: options.signal,
     });
   } catch (err) {
-    throw new MomoApiError(
+    throw new YewneApiError(
       err instanceof Error ? err.message : "network error",
     );
   }
@@ -229,7 +229,7 @@ export async function fetchSynthesize(
     } catch {
       body = await res.text().catch(() => undefined);
     }
-    throw new MomoApiError(`HTTP ${res.status}`, res.status, body);
+    throw new YewneApiError(`HTTP ${res.status}`, res.status, body);
   }
 
   return (await res.json()) as SynthesizeResponse;
@@ -275,13 +275,13 @@ export async function fetchChatDemoStream(
       signal: options.signal,
     });
   } catch (err) {
-    throw new MomoApiError(err instanceof Error ? err.message : "network error");
+    throw new YewneApiError(err instanceof Error ? err.message : "network error");
   }
 
   if (!res.ok) {
     let body: unknown;
     try { body = await res.json(); } catch { body = await res.text().catch(() => undefined); }
-    throw new MomoApiError(`HTTP ${res.status}`, res.status, body);
+    throw new YewneApiError(`HTTP ${res.status}`, res.status, body);
   }
 
   const reader = res.body!.getReader();

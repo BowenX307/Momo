@@ -8,7 +8,7 @@ import httpx
 from app.core.config import settings
 from app.tts.provider import SynthesisResult, TTSError
 
-# 按 scene 微调语速，贴合 MOMO「慢慢说、不抢话」的人设
+# 按 scene 微调语速，贴合于你「慢慢说、不抢话」的人设
 _SCENE_SPEED: dict[str, float] = {
     "late_night": 0.88,
     "rumination": 0.9,

@@ -16,7 +16,7 @@ Mood = Literal["down", "anxious", "calm"]
 class AftercareRequest(BaseModel):
     """生成拍立得所需的上下文。history 为空（还没聊）时后端直接落 calm 兜底。"""
 
-    persona: Persona = Field(default=Persona.ROCKY, description="当前人格，决定金句口吻与署名")
+    persona: Persona = Field(default=Persona.NINI, description="当前人格，决定金句口吻与署名")
     history: list[HistoryMessage] = Field(
         default_factory=list,
         max_length=20,

@@ -29,14 +29,12 @@ class Scene(str, Enum):
 class Persona(str, Enum):
     """AI 陪伴人格。
 
-    - momo：温柔水母，稳定陪伴
-    - iris：毒舌损友，高洞察力
-    - rocky：白斗篷小精灵，知性直接，帮用户把问题变小
+    - youyou（优优）：毒舌损友，高洞察力
+    - nini（妮妮）：白斗篷小精灵，知性直接，帮用户把问题变小
     """
 
-    MOMO = "momo"
-    IRIS = "iris"
-    ROCKY = "rocky"
+    YOUYOU = "youyou"
+    NINI = "nini"
 
 
 class HistoryMessage(BaseModel):
@@ -59,8 +57,8 @@ class ChatDemoRequest(BaseModel):
         description="本轮场景；为 None 时后端用 SceneClassifier 自动分类",
     )
     persona: Persona = Field(
-        default=Persona.MOMO,
-        description="AI 人格选择；默认 momo，可切换为 iris",
+        default=Persona.NINI,
+        description="AI 人格选择；默认 nini（妮妮），可切换为 youyou（优优）",
     )
     history: list[HistoryMessage] = Field(
         default_factory=list,
@@ -100,7 +98,7 @@ class ChatDemoResponse(BaseModel):
     reaction: str = Field(
         default="",
         description=(
-            "小人该播的反应动画，据 uni 这句回答判定；空串表示无（momo 或判定失败），"
-            "前端回落 Idle。取值随人格：iris=开心/伤心/疑惑/肯定/否定，rocky=开心/伤心/疑惑/关心"
+            "小人该播的反应动画，据于你这句回答判定；空串表示无（判定失败），"
+            "前端回落 Idle。取值随人格：youyou=开心/伤心/疑惑/肯定/否定，nini=开心/伤心/疑惑/关心"
         ),
     )
