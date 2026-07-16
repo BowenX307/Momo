@@ -18,13 +18,16 @@ ENDPOINT = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
 # 优优(youyou)毒嘴台词——听音色是否"轻快/少年/不成熟"
 TEXT = "我知道你不是真的想睡,你只是不想面对明天。行吧,那就再赖一会儿,但别骗自己说这是休息。"
 
-# (label, voice_id)  —— 偏年轻/清爽/少年的男声候选
+# (label, voice_id)  —— 按优优人设(毒嘴/俏皮/少年感)选的第二批候选
+# 第一批试过:小天/少年梓辛(当前)/阳光青年/清爽男大/云舟
 CANDIDATES = [
-    ("xiaotian_小天",      "zh_male_taocheng_uranus_bigtts"),
-    ("shaonian_少年梓辛",  "zh_male_shaonianzixin_moon_bigtts"),
-    ("yangguang_阳光青年", "zh_male_yangguangqingnian_moon_bigtts"),
-    ("qingshuang_清爽男大","zh_male_qingshuangnanda_mars_bigtts"),
-    ("yunzhou_云舟_对照",  "zh_male_m191_uranus_bigtts"),
+    ("beijingxiaoye_北京小爷", "zh_male_beijingxiaoye_moon_bigtts"),       # 京味痞气,吐槽感
+    ("kanye_京腔侃爷",         "zh_male_jingqiangkanye_moon_bigtts"),      # 嘴碎调侃
+    ("linjia_邻家男孩",        "zh_male_linjiananhai_moon_bigtts"),        # 年轻亲切
+    ("shenye_深夜播客",        "zh_male_shenyeboke_moon_bigtts"),          # 慵懒夜聊感
+    ("haoyu_浩宇小哥",         "zh_male_haoyuxiaoge_moon_bigtts"),         # 青年
+    ("xiaoye_emo_北京小爷情感","zh_male_beijingxiaoye_emo_v2_mars_bigtts"),# 多情感版,可传 emotion
+    ("shaonian_少年梓辛_对照", "zh_male_shaonianzixin_moon_bigtts"),       # 当前线上音色,对照用
 ]
 RESOURCES = ["seed-tts-2.0", "seed-tts-1.0"]
 

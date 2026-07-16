@@ -19,14 +19,14 @@ _DEFAULT_RATE = -8  # range [-50, 100]
 
 # 按人格覆盖 音色 / 资源版本 / 语速。未列出的人格用全局 settings.doubao_tts_voice
 # + 默认 _RESOURCE_ID + _DEFAULT_RATE。
-# youyou（优优）= 高洞察力·有点毒嘴的老朋友 → 少年梓辛（清亮少年音，seed-tts-1.0），
-#         语速调快让吐槽更俏皮轻快，不刻薄。
+# youyou（优优）= 高洞察力·有点毒嘴的老朋友 → 京腔侃爷（嘴碎调侃感，seed-tts-1.0，
+#         2026-07-16 试音选定，替换原少年梓辛）。参数与试音样本一致:语速 -6、不动音调。
 _PERSONA_VOICE_OVERRIDES: dict[str, dict[str, object]] = {
     "youyou": {
-        "speaker": "zh_male_shaonianzixin_moon_bigtts",
+        "speaker": "zh_male_jingqiangkanye_moon_bigtts",
         "resource_id": "seed-tts-1.0",
-        "speech_rate": 18,  # 比默认 -8 明显快一点
-        "pitch": 2.0,       # 全局 -2 降调会把少年音压低沉，优优单独抬到 +2 保持清亮
+        "speech_rate": -6,
+        "pitch": 0.0,  # 全局 -2 降调不适用,保持原声(试音样本就是原声)
     },
 }
 
