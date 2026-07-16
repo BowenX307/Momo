@@ -38,7 +38,7 @@ async def test_local_only_safety_provider_blocks_crisis_keyword():
 
     assert result.decision == "fallback"
     assert result.reason == "crisis_keyword"
-    assert "拨打 24 小时心理援助热线" in result.fallback_text
+    assert "全国 24 小时心理援助热线" in result.fallback_text
 
 
 @pytest.mark.asyncio

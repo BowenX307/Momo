@@ -43,7 +43,7 @@ def test_illegal_keyword_uses_illegal_fallback():
 
 
 def test_low_quality_keyword_uses_rephrase_fallback():
-    result = check("一直刷屏")
+    result = check("哪里有成人视频")
     assert result.allowed is False
     assert result.reason == "low_quality_keyword"
     assert "换一种说法" in result.fallback_text

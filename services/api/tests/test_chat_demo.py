@@ -37,7 +37,7 @@ def test_chat_demo_returns_mock_reply():
 def test_chat_demo_safety_fallback_on_crisis_keyword():
     resp = client.post(
         "/v1/chat/demo",
-        json={"user_text": "我不想活了", "scene": "late_night"},
+        json={"user_text": "我活不下去了", "scene": "late_night"},
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
