@@ -102,10 +102,10 @@ const MOODS: Mood[] = [
   },
 ];
 
-// 每个形象的生活背景设定:署名 + "我这边同时发生的事"(把你的时刻嵌进 ta 的世界)
-const PERSONA_LIFE: Record<Persona, { sign: string; world: string }> = {
-  youyou: { sign: "优优", world: "你皱着眉的时候，我这边刚下过一场短雨，窗台上还挂着水珠。" },
-  nini: { sign: "妮妮", world: "你发着呆的时候，我在山脚下把炉子生上了，火正慢慢旺起来。" },
+// 拍立得背面署名。"我这边发生的事"已由回信正文承载(小天地意象内嵌在 prompt 里)。
+const PERSONA_SIGN: Record<Persona, string> = {
+  youyou: "优优",
+  nini: "妮妮",
 };
 
 function makeStamp() {
@@ -134,8 +134,8 @@ export default function YewneChatPage() {
   const [moodIndex, setMoodIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [polaroidLoading, setPolaroidLoading] = useState(false);
-  // 后端现写的金句(据真实对话);为 null 时回落到该情绪档 curated 金句(手动切档时)
-  const [dynamicQuote, setDynamicQuote] = useState<string | null>(null);
+  // 后端现写的回信(据真实对话判 12 场景);为 null 时回落到该情绪档 curated 金句
+  const [dynamicLetter, setDynamicLetter] = useState<string | null>(null);
   const [stamp, setStamp] = useState<{ date: string; flavor: string }>({ date: "", flavor: "" });
   const [history, setHistory] = useState<HistoryMessage[]>([]);
   const [turns, setTurns] = useState<ConvTurn[]>([]);
@@ -247,7 +247,7 @@ export default function YewneChatPage() {
     setReplyKey((k) => k + 1);
   }
 
-  // 相机:据真实对话现拍一张——后端判情绪档(选照片)+ 按人格现写金句(印背面)。
+  // 相机:据真实对话现拍一张——后端判 12 场景(映射情绪档选照片)+ 按人格写回信(印背面)。
   // 失败静默落 calm,保证永远出片。
   async function handleTakePolaroid() {
     if (polaroidLoading) return;
@@ -257,10 +257,10 @@ export default function YewneChatPage() {
       const res = await fetchAftercare({ persona, history });
       const idx = MOODS.findIndex((m) => m.key === res.mood);
       setMoodIndex(idx >= 0 ? idx : 2); // 找不到落 calm
-      setDynamicQuote(res.quote);
+      setDynamicLetter(res.letter || res.quote); // 旧后端没有 letter 字段时退回 quote
     } catch {
       setMoodIndex(2); // calm 兜底
-      setDynamicQuote(null);
+      setDynamicLetter(null);
     } finally {
       setStamp(stampNow);
       setFlipped(false);
@@ -736,25 +736,22 @@ export default function YewneChatPage() {
                   </div>
                 </div>
 
-                {/* 背面:于你写给你的话 */}
+                {/* 背面:于你的回信(≤100 字,回落 curated 金句) */}
                 <div className="pol-face pol-back absolute inset-0 flex flex-col rounded-[7px] bg-[#fbf7ee] p-6 shadow-[0_22px_55px_rgba(60,45,30,0.4)]">
                   <div
                     className="pointer-events-none absolute inset-0 rounded-[7px]"
                     style={{ backgroundImage: GRAIN_FINE, backgroundSize: "140px 140px", opacity: 0.4, mixBlendMode: "multiply" }}
                   />
                   <div className="relative z-10 flex h-full flex-col">
-                    <p className="whitespace-pre-line font-hand text-xl leading-relaxed text-[#504437]" style={{ filter: "url(#crayon-soft)" }}>
-                      {dynamicQuote ?? MOODS[moodIndex].quote}
+                    <p className="whitespace-pre-line font-hand text-[17px] leading-[1.9] text-[#504437]" style={{ filter: "url(#crayon-soft)" }}>
+                      {dynamicLetter ?? MOODS[moodIndex].quote}
                     </p>
-                    <svg className="my-4 h-[8px] w-24" viewBox="0 0 120 8" preserveAspectRatio="none" fill="none" aria-hidden>
+                    <svg className="mt-3 h-[8px] w-24" viewBox="0 0 120 8" preserveAspectRatio="none" fill="none" aria-hidden>
                       <path d="M2 5 Q 30 1 60 4 T 118 4" stroke="#d66e76" strokeOpacity="0.6" strokeWidth="2.4" strokeLinecap="round" />
                     </svg>
-                    <p className="font-hand text-[15px] leading-relaxed text-[#504437]/65">
-                      {PERSONA_LIFE[persona].world}
-                    </p>
-                    <div className="mt-auto flex items-end justify-between pt-4">
+                    <div className="mt-auto flex items-end justify-between pt-3">
                       <span className="font-yewne text-3xl text-[#d66e76]" style={{ filter: "url(#crayon-soft)" }}>
-                        {PERSONA_LIFE[persona].sign}
+                        {PERSONA_SIGN[persona]}
                       </span>
                       <span className="font-hand text-xs text-[#504437]/45">
                         {stamp.date} · {stamp.flavor}

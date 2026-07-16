@@ -144,8 +144,14 @@ export interface AftercareRequest {
 }
 
 export interface AftercareResponse {
+  /** 由场景映射的情绪档,决定拍立得正面照片 */
   mood: AftercareMood;
+  /** @deprecated 与 letter 内容相同,留作兼容 */
   quote: string;
+  /** 回信正文(12 场景回信小精灵产出,≤100 字,可含 \n 分段) */
+  letter: string;
+  /** 判定的场景键(blank_entry…withdrawal / safety_override),空串=判定失败 */
+  scene: string;
   is_mock: boolean;
 }
 

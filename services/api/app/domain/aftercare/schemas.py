@@ -25,8 +25,13 @@ class AftercareRequest(BaseModel):
 
 
 class AftercareResponse(BaseModel):
-    """拍立得内容。mood 决定正面照片，quote 是背面手写金句（可含一个 \\n 换行）。"""
+    """拍立得内容。mood 决定正面照片，letter 是背面的回信正文（≤100 字，可含 \\n 分段）。"""
 
-    mood: Mood = Field(description="down / anxious / calm，映射到 3 张 POV 自拍")
-    quote: str = Field(description="背面金句，按人格口吻现写")
-    is_mock: bool = Field(default=False, description="true 表示走了兜底金句，非模型现写")
+    mood: Mood = Field(description="down / anxious / calm，由场景映射，决定 3 张 POV 自拍选哪张")
+    quote: str = Field(description="已废弃，内容与 letter 相同；留作旧前端兼容")
+    letter: str = Field(default="", description="回信正文（12 场景回信小精灵产出，≤100 字）")
+    scene: str = Field(
+        default="",
+        description="判定的场景键（blank_entry…withdrawal / safety_override），空串=判定失败",
+    )
+    is_mock: bool = Field(default=False, description="true 表示走了兜底回信，非模型现写")
