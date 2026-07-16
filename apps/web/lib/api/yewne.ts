@@ -23,7 +23,12 @@ export type SafetyFlag =
   | "ok"
   | "empty_input"
   | "input_too_long"
-  | "crisis_keyword";
+  | "crisis_keyword"
+  | "aliyun_keyword"
+  | "blocked_keyword"
+  | "illegal_keyword"
+  | "low_quality_keyword"
+  | "hate_discrimination_keyword";
 
 export interface HistoryMessage {
   role: "user" | "assistant";

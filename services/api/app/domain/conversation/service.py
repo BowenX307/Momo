@@ -23,9 +23,14 @@ from uuid import uuid4
 
 import structlog
 
-from app.domain.conversation.schemas import ChatDemoRequest, ChatDemoResponse, Persona, Scene
+from app.domain.conversation.schemas import (
+    ChatDemoRequest,
+    ChatDemoResponse,
+    Persona,
+    Scene,
+)
 from app.domain.reaction.service import detect_reaction
-from app.domain.safety import check as safety_check
+from app.domain.safety.provider import SafetyProvider
 from app.domain.speech.service import _clean_for_tts
 from app.llm.classifier import SceneClassifier
 from app.llm.provider import LLMError, LLMProvider, MockProvider
@@ -62,7 +67,9 @@ async def _synthesize_audio(
         result = await tts_provider.synthesize(
             _clean_for_tts(reply), scene=scene.value, persona=persona
         )
-        audio_b64 = base64.b64encode(result.audio).decode("ascii") if result.audio else ""
+        audio_b64 = (
+            base64.b64encode(result.audio).decode("ascii") if result.audio else ""
+        )
         return audio_b64, result.content_type, tts_is_mock
     except TTSError as exc:
         logger.warning(
@@ -76,6 +83,7 @@ async def _synthesize_audio(
 
 async def handle_chat_demo(
     request: ChatDemoRequest,
+    safety_provider: SafetyProvider,
     provider: LLMProvider,
     classifier: SceneClassifier,
     is_mock: bool,
@@ -92,7 +100,7 @@ async def handle_chat_demo(
     """
     request_id = uuid4().hex
 
-    safety = safety_check(request.user_text)
+    safety = await safety_provider.check(request.user_text)
     if not safety.allowed:
         scene = request.scene or Scene.LONELINESS
         logger.info(
@@ -137,7 +145,9 @@ async def handle_chat_demo(
     try:
         reply, emotion = await asyncio.gather(
             provider.complete(
-                scene=scene.value, user_text=request.user_text, history=history,
+                scene=scene.value,
+                user_text=request.user_text,
+                history=history,
                 persona=request.persona.value,
             ),
             _detect_emotion_safe(request.user_text, provider),
@@ -183,7 +193,9 @@ async def handle_chat_demo(
             upstream_status=exc.upstream_status,
         )
         mock_reply = await MockProvider().complete(
-            scene=scene.value, user_text=request.user_text, history=history,
+            scene=scene.value,
+            user_text=request.user_text,
+            history=history,
             persona=request.persona.value,
         )
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
@@ -232,6 +244,7 @@ async def _iter_sentences(
 
 async def stream_chat_demo(
     request: ChatDemoRequest,
+    safety_provider: SafetyProvider,
     provider: LLMProvider,
     classifier: SceneClassifier,
     tts_provider: TTSProvider | None,
@@ -240,7 +253,7 @@ async def stream_chat_demo(
     """流式版本：LLM 逐句输出，每句完成立刻 TTS，以 SSE data 行 yield。"""
     request_id = uuid4().hex
 
-    safety = safety_check(request.user_text)
+    safety = await safety_provider.check(request.user_text)
     if not safety.allowed:
         scene = request.scene or Scene.LONELINESS
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
@@ -249,15 +262,34 @@ async def stream_chat_demo(
                 safety.fallback_text, scene, tts_provider, tts_is_mock, request_id,
                 persona=request.persona.value,
             )
-        yield "data: " + json.dumps({
-            "type": "audio", "index": 0,
-            "audio_base64": audio_b64, "content_type": audio_ct, "is_mock": audio_mock,
-        }) + "\n\n"
-        yield "data: " + json.dumps({
-            "type": "done", "reply": safety.fallback_text, "scene": scene.value,
-            "safety_flag": safety.reason, "is_mock": False,
-            "request_id": request_id, "degraded": False,
-        }) + "\n\n"
+        yield (
+            "data: "
+            + json.dumps(
+                {
+                    "type": "audio",
+                    "index": 0,
+                    "audio_base64": audio_b64,
+                    "content_type": audio_ct,
+                    "is_mock": audio_mock,
+                }
+            )
+            + "\n\n"
+        )
+        yield (
+            "data: "
+            + json.dumps(
+                {
+                    "type": "done",
+                    "reply": safety.fallback_text,
+                    "scene": scene.value,
+                    "safety_flag": safety.reason,
+                    "is_mock": False,
+                    "request_id": request_id,
+                    "degraded": False,
+                }
+            )
+            + "\n\n"
+        )
         return
 
     if request.scene is None:
@@ -271,14 +303,18 @@ async def stream_chat_demo(
         else None
     )
 
-    emotion_task = asyncio.create_task(_detect_emotion_safe(request.user_text, provider))
+    emotion_task = asyncio.create_task(
+        _detect_emotion_safe(request.user_text, provider)
+    )
 
     full_reply = ""
     sentence_idx = 0
 
     try:
         token_stream = provider.stream_complete(  # type: ignore[attr-defined]
-            scene=scene.value, user_text=request.user_text, history=history,
+            scene=scene.value,
+            user_text=request.user_text,
+            history=history,
             persona=request.persona.value,
         )
         async for sentence in _iter_sentences(token_stream):
@@ -289,22 +325,36 @@ async def stream_chat_demo(
                     sentence, scene, tts_provider, tts_is_mock, request_id,
                     persona=request.persona.value,
                 )
-            yield "data: " + json.dumps({
-                "type": "audio", "index": sentence_idx, "text": sentence,
-                "audio_base64": audio_b64, "content_type": audio_ct, "is_mock": audio_mock,
-            }) + "\n\n"
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "type": "audio",
+                        "index": sentence_idx,
+                        "text": sentence,
+                        "audio_base64": audio_b64,
+                        "content_type": audio_ct,
+                        "is_mock": audio_mock,
+                    }
+                )
+                + "\n\n"
+            )
             sentence_idx += 1
 
     except (LLMError, AttributeError):
         # provider 不支持流式（如 Mock）：降级到一次性调用
         try:
             full_reply = await provider.complete(
-                scene=scene.value, user_text=request.user_text, history=history,
+                scene=scene.value,
+                user_text=request.user_text,
+                history=history,
                 persona=request.persona.value,
             )
         except LLMError:
             full_reply = await MockProvider().complete(
-                scene=scene.value, user_text=request.user_text, history=history,
+                scene=scene.value,
+                user_text=request.user_text,
+                history=history,
                 persona=request.persona.value,
             )
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
@@ -313,15 +363,35 @@ async def stream_chat_demo(
                 full_reply, scene, tts_provider, tts_is_mock, request_id,
                 persona=request.persona.value,
             )
-        yield "data: " + json.dumps({
-            "type": "audio", "index": 0, "text": full_reply,
-            "audio_base64": audio_b64, "content_type": audio_ct, "is_mock": audio_mock,
-        }) + "\n\n"
+        yield (
+            "data: "
+            + json.dumps(
+                {
+                    "type": "audio",
+                    "index": 0,
+                    "text": full_reply,
+                    "audio_base64": audio_b64,
+                    "content_type": audio_ct,
+                    "is_mock": audio_mock,
+                }
+            )
+            + "\n\n"
+        )
 
     emotion = await emotion_task
-    yield "data: " + json.dumps({
-        "type": "done", "reply": full_reply, "scene": scene.value,
-        "safety_flag": "ok", "is_mock": False,
-        "request_id": request_id, "degraded": False,
-        "emotion": emotion,
-    }) + "\n\n"
+    yield (
+        "data: "
+        + json.dumps(
+            {
+                "type": "done",
+                "reply": full_reply,
+                "scene": scene.value,
+                "safety_flag": "ok",
+                "is_mock": False,
+                "request_id": request_id,
+                "degraded": False,
+                "emotion": emotion,
+            }
+        )
+        + "\n\n"
+    )

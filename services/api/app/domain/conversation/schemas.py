@@ -91,7 +91,9 @@ class ChatDemoResponse(BaseModel):
         default=False,
         description="true 表示原本走真模型但调用失败已降级到 Mock；前端可以加'临时离线'提示",
     )
-    audio_base64: str = Field(default="", description="MP3 base64；空串时前端降级浏览器朗读")
+    audio_base64: str = Field(
+        default="", description="MP3 base64；空串时前端降级浏览器朗读"
+    )
     audio_content_type: str = Field(default="audio/mpeg")
     audio_is_mock: bool = Field(default=False)
     emotion: str = Field(default="", description="用户输入的情绪标签，空串表示未检测到")

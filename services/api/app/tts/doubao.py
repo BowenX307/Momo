@@ -20,18 +20,18 @@ _DEFAULT_RATE = -8  # range [-50, 100]
 # 按人格覆盖 音色 / 资源版本 / 语速。未列出的人格用全局 settings.doubao_tts_voice
 # + 默认 _RESOURCE_ID + _DEFAULT_RATE。
 # youyou（优优）= 高洞察力·有点毒嘴的老朋友 → 京腔侃爷（嘴碎调侃感，seed-tts-1.0，
-#         2026-07-16 试音选定，替换原少年梓辛）。参数与试音样本一致:语速 -6、不动音调。
+#         2026-07-16 试音选定，替换原少年梓辛）。
 _PERSONA_VOICE_OVERRIDES: dict[str, dict[str, object]] = {
     "youyou": {
         "speaker": "zh_male_jingqiangkanye_moon_bigtts",
         "resource_id": "seed-tts-1.0",
-        "speech_rate": 5,   # 试音样本是 -6 偏慢;+4 仍慢、+6 略快,2026-07-16 定为 +5
+        "speech_rate": 5,  # 试音样本是 -6 偏慢;+4 仍慢、+6 略快,2026-07-16 定为 +5
         "pitch": 0.0,  # 全局 -2 降调不适用,保持原声(试音样本就是原声)
     },
 }
 
-_MIN_CLAUSE_LEN = 8   # 逗号两侧从句都要达到此长度才插停顿
-_MIN_TEXT_LEN = 20    # 短文本不处理
+_MIN_CLAUSE_LEN = 8  # 逗号两侧从句都要达到此长度才插停顿
+_MIN_TEXT_LEN = 20  # 短文本不处理
 
 
 def _with_natural_pauses(text: str) -> str:
@@ -55,7 +55,7 @@ def _with_natural_pauses(text: str) -> str:
                 out.append('<break time="300ms"/>')
             out.append(chunk)
             last_clause_len = clause_len
-    return f'<speak>{"".join(out)}</speak>'
+    return f"<speak>{''.join(out)}</speak>"
 
 
 class DoubaoTTSProvider:
@@ -88,11 +88,13 @@ class DoubaoTTSProvider:
                     "sample_rate": 24000,
                     "speech_rate": speech_rate,
                 },
-                "additions": json.dumps({
-                    "post_process": {"pitch": pitch},
-                    "disable_markdown_filter": True,
-                    "enable_ssml": True,
-                }),
+                "additions": json.dumps(
+                    {
+                        "post_process": {"pitch": pitch},
+                        "disable_markdown_filter": True,
+                        "enable_ssml": True,
+                    }
+                ),
             },
         }
         headers = {
@@ -102,7 +104,9 @@ class DoubaoTTSProvider:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=settings.tts_timeout_seconds) as client:
+            async with httpx.AsyncClient(
+                timeout=settings.tts_timeout_seconds
+            ) as client:
                 response = await client.post(_ENDPOINT, headers=headers, json=payload)
         except httpx.TimeoutException as exc:
             raise TTSError("timeout", f"doubao tts timeout: {exc}") from exc

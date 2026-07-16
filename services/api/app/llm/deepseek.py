@@ -181,7 +181,9 @@ class DeepSeekProvider:
         persona: str = "nini",
     ) -> AsyncGenerator[str, None]:
         """流式输出 token，逐个 yield。"""
-        messages: list[dict] = [{"role": "system", "content": _system_prompt_for(persona)}]
+        messages: list[dict] = [
+            {"role": "system", "content": _system_prompt_for(persona)}
+        ]
         if history:
             messages.extend(history)
         messages.append({"role": "user", "content": user_text})
