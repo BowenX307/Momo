@@ -25,7 +25,7 @@ _PERSONA_VOICE_OVERRIDES: dict[str, dict[str, object]] = {
     "youyou": {
         "speaker": "zh_female_linjianvhai_moon_bigtts",
         "resource_id": "seed-tts-1.0",
-        "speech_rate": 5,  # 0→+2→+3→+5(2026-07-17 按线上实听逐步调快;线上因 SSML 停顿+流式逐句,听感比裸样本慢。API 只收整数)
+        "speech_rate": 6,  # 0→+2→+3→+5→+6(2026-07-17 按线上实听逐步调快。API 只收整数)
         "pitch": 0.0,  # 全局 -2 降调不适用,保持原声(试音样本就是原声)
         # 300ms 逗号停顿是给旧全局慢速音色(小何,rate -8)调的;邻家女孩 +5 语速下
         # 固定长停顿听感突兀(2026-07-17 A/B/C 对照后决定关掉,靠原声语感断句)。

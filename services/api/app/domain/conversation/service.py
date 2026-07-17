@@ -37,8 +37,6 @@ from app.llm.provider import LLMError, LLMProvider, MockProvider
 from app.tts.provider import TTSError, TTSProvider
 
 _SENTENCE_ENDS = frozenset("。？！…\n")
-_SOFT_ENDS = frozenset("，、,")   # 第一段抢跑用的软停顿
-_FIRST_CHUNK_MIN = 6             # 第一段至少几个字才在软停顿处提前切出去
 
 logger = structlog.get_logger(__name__)
 
@@ -222,21 +220,16 @@ async def _iter_sentences(
 ) -> AsyncGenerator[str, None]:
     """把 token 流按句子边界切分，每完整一句 yield 一次。
 
-    抢跑：第一段允许在软停顿(逗号/顿号)且够长时就先切出去做 TTS，
-    让于你尽早开口；之后仍按整句切分，保证语气自然。
+    只按整句切分。曾有"第一段在逗号处抢跑切出"的首字加速,因为会把半句话
+    切成两段音频、衔接处顿挫明显,2026-07-17 按产品实听反馈移除。
     """
     buf = ""
-    first_done = False
     async for token in token_stream:
         buf += token
-        last = buf[-1]
-        if last in _SENTENCE_ENDS or (
-            not first_done and last in _SOFT_ENDS and len(buf.strip()) >= _FIRST_CHUNK_MIN
-        ):
+        if buf[-1] in _SENTENCE_ENDS:
             chunk = buf.strip()
             if chunk:
                 yield chunk
-                first_done = True
             buf = ""
     if buf.strip():
         yield buf.strip()
