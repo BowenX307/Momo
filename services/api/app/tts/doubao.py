@@ -25,7 +25,7 @@ _PERSONA_VOICE_OVERRIDES: dict[str, dict[str, object]] = {
     "youyou": {
         "speaker": "zh_female_linjianvhai_moon_bigtts",
         "resource_id": "seed-tts-1.0",
-        "speech_rate": 3,  # 0→+2→+3(2026-07-17 定档;线上因 SSML 停顿+流式逐句,听感比裸样本慢,故取样本里偏快一档。API 只收整数,2.5 不可用)
+        "speech_rate": 5,  # 0→+2→+3→+5(2026-07-17 按线上实听逐步调快;线上因 SSML 停顿+流式逐句,听感比裸样本慢。API 只收整数)
         "pitch": 0.0,  # 全局 -2 降调不适用,保持原声(试音样本就是原声)
     },
 }
