@@ -27,6 +27,9 @@ _PERSONA_VOICE_OVERRIDES: dict[str, dict[str, object]] = {
         "resource_id": "seed-tts-1.0",
         "speech_rate": 5,  # 0→+2→+3→+5(2026-07-17 按线上实听逐步调快;线上因 SSML 停顿+流式逐句,听感比裸样本慢。API 只收整数)
         "pitch": 0.0,  # 全局 -2 降调不适用,保持原声(试音样本就是原声)
+        # 300ms 逗号停顿是给旧全局慢速音色(小何,rate -8)调的;邻家女孩 +5 语速下
+        # 固定长停顿听感突兀(2026-07-17 A/B/C 对照后决定关掉,靠原声语感断句)。
+        "natural_pauses": False,
     },
 }
 
@@ -77,11 +80,12 @@ class DoubaoTTSProvider:
         resource_id = str(override.get("resource_id", _RESOURCE_ID))
         speech_rate = int(override.get("speech_rate", _DEFAULT_RATE))
         pitch = float(override.get("pitch", settings.doubao_tts_pitch))
+        natural_pauses = bool(override.get("natural_pauses", True))
 
         payload = {
             "user": {"uid": "yewne"},
             "req_params": {
-                "text": _with_natural_pauses(stripped),
+                "text": _with_natural_pauses(stripped) if natural_pauses else stripped,
                 "speaker": voice,
                 "audio_params": {
                     "format": "mp3",
