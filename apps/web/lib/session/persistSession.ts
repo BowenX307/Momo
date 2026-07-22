@@ -2,6 +2,7 @@ import type { HistoryMessage, Persona, Scene } from "@/lib/api/yewne";
 
 // 会话按人格分键存储，切换人格时各自保留历史。
 const KEY_PREFIX = "yewne:session:";
+const USER_ID_KEY = "yewne:external-user-id";
 const TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_TURNS = 10;
 const MAX_MSG_LEN = 500;
@@ -18,8 +19,25 @@ export interface ConvTurn {
 export interface PersistedSession {
   history: HistoryMessage[];
   scene: Scene | null;
+  conversationId: string | null;
   turns: ConvTurn[];
   savedAt: number;
+}
+
+export type SessionSnapshot = Omit<PersistedSession, "savedAt">;
+
+export function getOrCreateExternalUserId(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const existing = localStorage.getItem(USER_ID_KEY);
+    if (existing) return existing;
+
+    const generated = crypto.randomUUID();
+    localStorage.setItem(USER_ID_KEY, generated);
+    return generated;
+  } catch {
+    return crypto.randomUUID();
+  }
 }
 
 export function loadSession(persona: Persona): PersistedSession | null {
@@ -32,13 +50,16 @@ export function loadSession(persona: Persona): PersistedSession | null {
       localStorage.removeItem(keyFor(persona));
       return null;
     }
-    return session;
+    return {
+      ...session,
+      conversationId: session.conversationId ?? null,
+    };
   } catch {
     return null;
   }
 }
 
-export function saveSession(persona: Persona, session: PersistedSession): void {
+export function saveSession(persona: Persona, session: SessionSnapshot): void {
   if (typeof window === "undefined") return;
   try {
     const trimmedHistory = session.history.slice(-MAX_TURNS * 2).map((m) => ({
@@ -51,7 +72,12 @@ export function saveSession(persona: Persona, session: PersistedSession): void {
     }));
     localStorage.setItem(
       keyFor(persona),
-      JSON.stringify({ ...session, history: trimmedHistory, turns: trimmedTurns }),
+      JSON.stringify({
+        ...session,
+        history: trimmedHistory,
+        turns: trimmedTurns,
+        savedAt: Date.now(),
+      }),
     );
   } catch {
     // localStorage full or unavailable — silently ignore

@@ -1,9 +1,12 @@
 """会话编排单元测试。用假 provider / 假 classifier 覆盖各分支，不打真实网络。"""
 
+from uuid import UUID
+
 import pytest
 
 from app.domain.conversation.schemas import ChatDemoRequest, Scene
 from app.domain.conversation.service import handle_chat_demo
+from app.domain.safety import SafetyReason
 from app.domain.safety.provider import LocalOnlySafetyProvider
 from app.llm.classifier import SceneClassifier
 from app.llm.provider import LLMError, LLMProvider
@@ -47,6 +50,47 @@ class _SpyClassifier:
         self.call_count += 1
         self.last_text = user_text
         return self.return_scene
+
+
+class _FakePersistence:
+    """记录持久化参数，并返回固定会话 ID。"""
+
+    conversation_id = UUID("00000000-0000-0000-0000-000000000123")
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def save_exchange(
+        self,
+        *,
+        external_user_id: str,
+        conversation_id: UUID | None,
+        scene: str,
+        persona: str,
+        user_text: str,
+        reply: str,
+        safety_flag: SafetyReason,
+        emotion: str,
+        request_id: str,
+        is_mock: bool,
+        degraded: bool,
+    ) -> UUID:
+        self.calls.append(
+            {
+                "external_user_id": external_user_id,
+                "conversation_id": conversation_id,
+                "scene": scene,
+                "persona": persona,
+                "user_text": user_text,
+                "reply": reply,
+                "safety_flag": safety_flag,
+                "emotion": emotion,
+                "request_id": request_id,
+                "is_mock": is_mock,
+                "degraded": degraded,
+            }
+        )
+        return self.conversation_id
 
 
 @pytest.mark.asyncio
@@ -127,3 +171,50 @@ async def test_handle_chat_demo_safety_blocks_before_llm_and_classifier():
     assert response.scene == Scene.LONELINESS  # safety + scene=None → 默认 loneliness
     assert "诊断" not in response.reply
     assert "治疗" not in response.reply
+
+
+@pytest.mark.asyncio
+async def test_handle_chat_demo_persists_normal_exchange():
+    """带匿名用户标识时，正常回复应保存并返回会话 ID。"""
+    persistence = _FakePersistence()
+    response = await handle_chat_demo(
+        ChatDemoRequest(
+            user_text="今天压力很大",
+            external_user_id="browser-user-1",
+            scene=Scene.STRESS,
+        ),
+        safety_provider=LocalOnlySafetyProvider(),
+        provider=_FakeOkProvider(),
+        classifier=_SpyClassifier(),
+        is_mock=False,
+        persistence=persistence,
+    )
+
+    assert response.conversation_id == persistence.conversation_id
+    assert len(persistence.calls) == 1
+    assert persistence.calls[0]["user_text"] == "今天压力很大"
+    assert persistence.calls[0]["reply"] == response.reply
+    assert persistence.calls[0]["safety_flag"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_handle_chat_demo_persists_safety_fallback():
+    """Safety 拦截仍应保存用户输入和 fallback，但不调用 LLM。"""
+    persistence = _FakePersistence()
+    response = await handle_chat_demo(
+        ChatDemoRequest(
+            user_text="我想自杀",
+            external_user_id="browser-user-1",
+            scene=Scene.LONELINESS,
+        ),
+        safety_provider=LocalOnlySafetyProvider(),
+        provider=_FakeFailingProvider(),
+        classifier=_SpyClassifier(),
+        is_mock=False,
+        persistence=persistence,
+    )
+
+    assert response.conversation_id == persistence.conversation_id
+    assert len(persistence.calls) == 1
+    assert persistence.calls[0]["safety_flag"] == "crisis_keyword"
+    assert persistence.calls[0]["reply"] == response.reply

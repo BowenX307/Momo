@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["*"]  # 生产环境必须收紧
 
     # 数据库（暂未启用）
-    database_url: str = "postgresql+psycopg://momo:momo@localhost:5432/momo"
+    database_url: str = "postgresql+psycopg://yewne:YewneAI@localhost:5432/yewne_dev"
 
     # Redis（暂未启用）
     redis_url: str = "redis://localhost:6379/0"

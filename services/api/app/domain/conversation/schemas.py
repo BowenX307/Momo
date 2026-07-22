@@ -6,6 +6,7 @@ demo 阶段仅维护后端一份，前端按字符串字面量传入。
 
 from enum import Enum
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -52,6 +53,16 @@ class ChatDemoRequest(BaseModel):
     """
 
     user_text: str = Field(..., description="用户本轮输入；空字符串会走 safety 兜底")
+    external_user_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        description="前端生成的匿名用户标识；缺省时不持久化本轮对话",
+    )
+    conversation_id: UUID | None = Field(
+        default=None,
+        description="后端返回的会话 ID；第一轮为空，后续轮次原样传回",
+    )
     scene: Scene | None = Field(
         default=None,
         description="本轮场景；为 None 时后端用 SceneClassifier 自动分类",
@@ -72,6 +83,12 @@ class ChatDemoRequest(BaseModel):
         """空串当作未指定。Unity 的 JsonUtility 会把 null 序列化成 ""，别让它吃 422。"""
         return None if v == "" else v
 
+    @field_validator("conversation_id", mode="before")
+    @classmethod
+    def _empty_conversation_id_is_none(cls, v: object) -> object:
+        """兼容把空会话 ID 序列化成空串的客户端。"""
+        return None if v == "" else v
+
 
 class ChatDemoResponse(BaseModel):
     """单轮 demo 响应。
@@ -87,6 +104,10 @@ class ChatDemoResponse(BaseModel):
     safety_flag: SafetyReason
     is_mock: bool
     request_id: str
+    conversation_id: UUID | None = Field(
+        default=None,
+        description="已持久化的会话 ID；未启用或写入失败时为空",
+    )
     degraded: bool = Field(
         default=False,
         description="true 表示原本走真模型但调用失败已降级到 Mock；前端可以加'临时离线'提示",
