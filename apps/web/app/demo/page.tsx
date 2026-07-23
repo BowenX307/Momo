@@ -316,7 +316,7 @@ export default function DemoPage() {
               ...capturedHistory,
               { role: "user" as const, content: text },
               { role: "assistant" as const, content: ev.reply },
-            ].slice(-20);
+            ];
             setHistory(nextHistory);
 
             const nextTurns = [...capturedTurns, { userText: text, reply: ev.reply }];
@@ -531,6 +531,7 @@ export default function DemoPage() {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="说点什么，或点左边麦克风…"
+              maxLength={2000}
               rows={1}
               className="flex-1 resize-none bg-transparent px-2 py-1.5 text-base leading-relaxed text-stone-900 placeholder-stone-400 outline-none disabled:opacity-60 dark:text-stone-100 dark:placeholder-stone-500"
             />

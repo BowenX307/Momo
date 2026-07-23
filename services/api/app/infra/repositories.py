@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infra.models import Conversation, Message, User
@@ -83,6 +83,18 @@ class ConversationRepository:
         )
         result = await self._session.execute(statement)
         return result.scalar_one_or_none()
+
+    async def trim_for_user(self, user_id: UUID, *, keep: int = 7) -> None:
+        """只保留用户最近的若干次浏览器会话。"""
+        stale_ids = (
+            select(Conversation.id)
+            .where(Conversation.user_id == user_id)
+            .order_by(Conversation.created_at.desc(), Conversation.id.desc())
+            .offset(keep)
+        )
+        await self._session.execute(
+            delete(Conversation).where(Conversation.id.in_(stale_ids))
+        )
 
 
 class MessageRepository:

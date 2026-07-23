@@ -73,6 +73,7 @@ class PostgresConversationPersistence:
                 is_mock=is_mock,
                 degraded=degraded,
             )
+            await self._conversations.trim_for_user(user.id, keep=7)
             await self._session.commit()
             return conversation.id
         except Exception:

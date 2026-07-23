@@ -360,7 +360,7 @@ export default function YewneChatPage() {
               ...capturedHistory,
               { role: "user" as const, content: text },
               { role: "assistant" as const, content: ev.reply },
-            ].slice(-20);
+            ];
             setHistory(nextHistory);
             const nextTurns = [...capturedTurns, { userText: text, reply: ev.reply }];
             setTurns(nextTurns);
@@ -613,6 +613,7 @@ export default function YewneChatPage() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="写点什么…"
+                maxLength={2000}
                 rows={1}
                 className="font-hand flex-1 resize-none bg-transparent px-2 py-1.5 text-lg leading-relaxed text-[#504437] outline-none placeholder:text-[#504437]/35"
               />
@@ -709,6 +710,7 @@ export default function YewneChatPage() {
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="写点什么…"
+                    maxLength={2000}
                     rows={1}
                     className="font-hand flex-1 resize-none bg-transparent px-2 py-1.5 text-lg leading-relaxed text-[#504437] outline-none placeholder:text-[#504437]/35"
                   />

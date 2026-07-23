@@ -1,0 +1,22 @@
+name: yewne
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-yewne}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yewne_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-yewne_dev}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - yewne_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  yewne_postgres_data:

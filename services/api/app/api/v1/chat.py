@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.domain.conversation.schemas import ChatDemoRequest, ChatDemoResponse
 from app.domain.conversation.service import handle_chat_demo, stream_chat_demo
 from app.domain.safety.factory import get_safety_provider
@@ -21,6 +22,16 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
 
 
+def _get_persistence(
+    request: ChatDemoRequest,
+    session: AsyncSession,
+) -> PostgresConversationPersistence | None:
+    """仅在配置开启且请求带匿名用户 ID 时启用 PostgreSQL 持久化。"""
+    if not settings.persistence_enabled or not request.external_user_id:
+        return None
+    return PostgresConversationPersistence(session)
+
+
 @router.post("/demo", response_model=ChatDemoResponse)
 async def chat_demo(
     request: ChatDemoRequest,
@@ -30,9 +41,7 @@ async def chat_demo(
     provider, is_mock = get_llm_provider()
     classifier = get_scene_classifier()
     tts_provider, tts_is_mock = get_tts_provider()
-    persistence = (
-        PostgresConversationPersistence(session) if request.external_user_id else None
-    )
+    persistence = _get_persistence(request, session)
     return await handle_chat_demo(
         request,
         safety_provider=safety_provider,
@@ -54,9 +63,7 @@ async def chat_demo_stream(
     provider, is_mock = get_llm_provider()
     classifier = get_scene_classifier()
     tts_provider, tts_is_mock = get_tts_provider()
-    persistence = (
-        PostgresConversationPersistence(session) if request.external_user_id else None
-    )
+    persistence = _get_persistence(request, session)
     return StreamingResponse(
         stream_chat_demo(
             request,

@@ -72,6 +72,8 @@ export interface ChatDemoResponse {
 export interface HealthResponse {
   status: string;
   env: string;
+  persistence_enabled?: boolean;
+  database_connected?: boolean | null;
   llm_provider: "mock" | "deepseek";
   llm_is_mock: boolean;
   stt_provider?: "mock" | "whisper";

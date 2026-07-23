@@ -42,7 +42,7 @@ class HistoryMessage(BaseModel):
     """单条历史消息，角色为 user 或 assistant。"""
 
     role: Literal["user", "assistant"]
-    content: str
+    content: str = Field(..., max_length=2000)
 
 
 class ChatDemoRequest(BaseModel):
@@ -52,7 +52,11 @@ class ChatDemoRequest(BaseModel):
     传 None，后续轮次把响应里返回的 scene 传回来，避免重复分类带来的延迟与成本。
     """
 
-    user_text: str = Field(..., description="用户本轮输入；空字符串会走 safety 兜底")
+    user_text: str = Field(
+        ...,
+        max_length=2000,
+        description="用户本轮输入（最多 2000 字符）；空字符串会走 safety 兜底",
+    )
     external_user_id: str | None = Field(
         default=None,
         min_length=1,
@@ -73,8 +77,7 @@ class ChatDemoRequest(BaseModel):
     )
     history: list[HistoryMessage] = Field(
         default_factory=list,
-        max_length=20,
-        description="最近对话历史（最多 20 条 / 10 轮），不含本轮 user_text",
+        description="当前浏览器会话的对话历史，不含本轮 user_text",
     )
 
     @field_validator("scene", mode="before")

@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import router as v1_router
 from app.core.config import settings
+from app.infra.database import check_database_connection
 from app.llm.factory import get_llm_provider
 from app.stt.factory import get_stt_provider
 from app.tts.factory import get_tts_provider
@@ -53,9 +54,14 @@ async def health():
     _, llm_is_mock = get_llm_provider()
     _, stt_is_mock = get_stt_provider()
     _, tts_is_mock = get_tts_provider()
+    database_connected = (
+        await check_database_connection() if settings.persistence_enabled else None
+    )
     return {
-        "status": "healthy",
+        "status": "degraded" if database_connected is False else "healthy",
         "env": settings.env,
+        "persistence_enabled": settings.persistence_enabled,
+        "database_connected": database_connected,
         "llm_provider": settings.llm_provider,
         "llm_is_mock": llm_is_mock,
         "stt_provider": settings.stt_provider,
