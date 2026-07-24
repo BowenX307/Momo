@@ -38,6 +38,7 @@ import {
 import {
   clearSession,
   formatRelativeTime,
+  getOrCreateExternalUserId,
   loadSession,
   saveSession,
   type ConvTurn as PersistedConvTurn,
@@ -68,6 +69,7 @@ export default function DemoPage() {
   // scene 由后端在第一句话上自动分类；此后整个会话都沿用，不再每轮重判。
   // null = 第一句话还没发过 / 用户尚未"开口定调"。
   const [scene, setScene] = useState<Scene | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [persona, setPersona] = useState<Persona>("nini");
   const [input, setInput] = useState("");
   const [reply, setReply] = useState<string>(PERSONA_GREETINGS.nini);
@@ -88,6 +90,7 @@ export default function DemoPage() {
   const [restoredAt, setRestoredAt] = useState<number | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+  const externalUserIdRef = useRef("");
   const historyEndRef = useRef<HTMLDivElement | null>(null);
 
   // 逐字渐显：语音每开一句把文字追加到 target，定时器让显示文字平滑追上 target。
@@ -141,6 +144,7 @@ export default function DemoPage() {
     clearSession(persona);
     setHistory([]);
     setScene(null);
+    setConversationId(null);
     setTurns([]);
     setReply(PERSONA_GREETINGS[persona]);
     setReplyKey((k) => k + 1);
@@ -153,7 +157,12 @@ export default function DemoPage() {
     if (next === persona) return;
 
     // 先保存当前人格的会话，切回来时能恢复。
-    saveSession(persona, { history, scene, turns, savedAt: Date.now() });
+    saveSession(persona, {
+      history,
+      scene,
+      conversationId,
+      turns,
+    });
 
     // 停掉当前播放/请求/渐显。
     stopAudioQueue();
@@ -170,6 +179,7 @@ export default function DemoPage() {
     if (saved) {
       setHistory(saved.history);
       setScene(saved.scene);
+      setConversationId(saved.conversationId);
       setTurns(saved.turns);
       setRestoredAt(saved.savedAt);
       setReply(
@@ -180,6 +190,7 @@ export default function DemoPage() {
     } else {
       setHistory([]);
       setScene(null);
+      setConversationId(null);
       setTurns([]);
       setRestoredAt(null);
       setReply(PERSONA_GREETINGS[next]);
@@ -189,15 +200,19 @@ export default function DemoPage() {
 
   useEffect(() => {
     // mount 时加载当前（初始）人格的会话。
+    externalUserIdRef.current = getOrCreateExternalUserId();
     const saved = loadSession(persona);
     if (saved) {
+      /* eslint-disable react-hooks/set-state-in-effect -- mount 时恢复浏览器本地会话 */
       setHistory(saved.history);
       setScene(saved.scene);
+      setConversationId(saved.conversationId);
       setTurns(saved.turns);
       setRestoredAt(saved.savedAt);
       if (saved.turns.length > 0) {
         setReply(saved.turns[saved.turns.length - 1].reply);
       }
+      /* eslint-enable react-hooks/set-state-in-effect */
     }
     const ctrl = new AbortController();
     fetchHealth({ signal: ctrl.signal }).then(setHealth).catch(() => {});
@@ -235,15 +250,24 @@ export default function DemoPage() {
     setError(null);
     setInput("");
     setEmotion("");
-    const payload: ChatDemoRequest = scene
-      ? { user_text: text, scene, persona, history }
-      : { user_text: text, persona, history };
+    const activeExternalUserId =
+      externalUserIdRef.current || getOrCreateExternalUserId();
+    externalUserIdRef.current = activeExternalUserId;
+    const payload: ChatDemoRequest = {
+      user_text: text,
+      external_user_id: activeExternalUserId,
+      conversation_id: conversationId,
+      persona,
+      history,
+      ...(scene ? { scene } : {}),
+    };
     setLastCurl(buildCurl(payload, API_BASE));
 
     // Capture state values for use inside callbacks (React closure safety).
     const capturedHistory = history;
     const capturedTurns = turns;
     const capturedScene = scene;
+    const capturedConversationId = conversationId;
 
     // 逐句显示：每句语音开播时把对应文字追加上去，文字与语音同步出现。
     let streamedText = "";
@@ -281,18 +305,28 @@ export default function DemoPage() {
               applyReply(ev.reply);
             }
             if (ev.scene !== capturedScene) setScene(ev.scene);
+            const nextConversationId =
+              ev.conversation_id ?? capturedConversationId;
+            if (nextConversationId !== capturedConversationId) {
+              setConversationId(nextConversationId);
+            }
             if (ev.emotion) setEmotion(ev.emotion);
 
             const nextHistory: HistoryMessage[] = [
               ...capturedHistory,
               { role: "user" as const, content: text },
               { role: "assistant" as const, content: ev.reply },
-            ].slice(-20);
+            ];
             setHistory(nextHistory);
 
             const nextTurns = [...capturedTurns, { userText: text, reply: ev.reply }];
             setTurns(nextTurns);
-            saveSession(persona, { history: nextHistory, scene: ev.scene, turns: nextTurns, savedAt: Date.now() });
+            saveSession(persona, {
+              history: nextHistory,
+              scene: ev.scene,
+              conversationId: nextConversationId,
+              turns: nextTurns,
+            });
             setRestoredAt(null);
 
             setLastResponse({
@@ -301,6 +335,7 @@ export default function DemoPage() {
               safety_flag: ev.safety_flag,
               is_mock: ev.is_mock,
               request_id: ev.request_id,
+              conversation_id: nextConversationId,
               degraded: ev.degraded,
               audio_base64: "",
               audio_content_type: "audio/mpeg",
@@ -496,6 +531,7 @@ export default function DemoPage() {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="说点什么，或点左边麦克风…"
+              maxLength={2000}
               rows={1}
               className="flex-1 resize-none bg-transparent px-2 py-1.5 text-base leading-relaxed text-stone-900 placeholder-stone-400 outline-none disabled:opacity-60 dark:text-stone-100 dark:placeholder-stone-500"
             />

@@ -14,7 +14,6 @@ import Link from "next/link";
 import Image from "next/image";
 
 import {
-  API_BASE,
   fetchAftercare,
   fetchChatDemoStream,
   YewneApiError,
@@ -32,6 +31,7 @@ import {
   whenQueueDone,
 } from "@/lib/speech/playYewneSpeech";
 import {
+  getOrCreateExternalUserId,
   loadSession,
   saveSession,
   type ConvTurn,
@@ -119,6 +119,7 @@ function makeStamp() {
 
 export default function YewneChatPage() {
   const [scene, setScene] = useState<Scene | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [persona, setPersona] = useState<Persona>("nini");
   const [input, setInput] = useState("");
   const [reply, setReply] = useState<string>(PERSONA_GREETINGS.nini);
@@ -144,6 +145,7 @@ export default function YewneChatPage() {
   const conversationActiveRef = useRef(false);
 
   const abortRef = useRef<AbortController | null>(null);
+  const externalUserIdRef = useRef("");
   const historyScrollRef = useRef<HTMLDivElement | null>(null);
 
   // 逐字渐显
@@ -192,7 +194,12 @@ export default function YewneChatPage() {
 
   function handlePersonaChange(next: Persona) {
     if (next === persona) return;
-    saveSession(persona, { history, scene, turns, savedAt: Date.now() });
+    saveSession(persona, {
+      history,
+      scene,
+      conversationId,
+      turns,
+    });
     stopAudioQueue();
     resetReveal();
     setSpeaking(false);
@@ -204,6 +211,7 @@ export default function YewneChatPage() {
     if (saved) {
       setHistory(saved.history);
       setScene(saved.scene);
+      setConversationId(saved.conversationId);
       setTurns(saved.turns);
       setReply(
         saved.turns.length > 0
@@ -213,6 +221,7 @@ export default function YewneChatPage() {
     } else {
       setHistory([]);
       setScene(null);
+      setConversationId(null);
       setTurns([]);
       setReply(PERSONA_GREETINGS[next]);
     }
@@ -220,12 +229,16 @@ export default function YewneChatPage() {
   }
 
   useEffect(() => {
+    externalUserIdRef.current = getOrCreateExternalUserId();
     const saved = loadSession(persona);
     if (saved && saved.turns.length > 0) {
+      /* eslint-disable react-hooks/set-state-in-effect -- mount 时恢复浏览器本地会话 */
       setHistory(saved.history);
       setScene(saved.scene);
+      setConversationId(saved.conversationId);
       setTurns(saved.turns);
       setReply(saved.turns[saved.turns.length - 1].reply);
+      /* eslint-enable react-hooks/set-state-in-effect */
     }
     return () => {
       abortRef.current?.abort();
@@ -290,13 +303,22 @@ export default function YewneChatPage() {
     setInput("");
     setPendingUser(text);
 
-    const payload: ChatDemoRequest = scene
-      ? { user_text: text, scene, persona, history }
-      : { user_text: text, persona, history };
+    const activeExternalUserId =
+      externalUserIdRef.current || getOrCreateExternalUserId();
+    externalUserIdRef.current = activeExternalUserId;
+    const payload: ChatDemoRequest = {
+      user_text: text,
+      external_user_id: activeExternalUserId,
+      conversation_id: conversationId,
+      persona,
+      history,
+      ...(scene ? { scene } : {}),
+    };
 
     const capturedHistory = history;
     const capturedTurns = turns;
     const capturedScene = scene;
+    const capturedConversationId = conversationId;
 
     let streamedText = "";
     let streamStarted = false;
@@ -328,17 +350,27 @@ export default function YewneChatPage() {
               applyReply(ev.reply);
             }
             if (ev.scene !== capturedScene) setScene(ev.scene);
+            const nextConversationId =
+              ev.conversation_id ?? capturedConversationId;
+            if (nextConversationId !== capturedConversationId) {
+              setConversationId(nextConversationId);
+            }
 
             const nextHistory: HistoryMessage[] = [
               ...capturedHistory,
               { role: "user" as const, content: text },
               { role: "assistant" as const, content: ev.reply },
-            ].slice(-20);
+            ];
             setHistory(nextHistory);
             const nextTurns = [...capturedTurns, { userText: text, reply: ev.reply }];
             setTurns(nextTurns);
             setPendingUser("");
-            saveSession(persona, { history: nextHistory, scene: ev.scene, turns: nextTurns, savedAt: Date.now() });
+            saveSession(persona, {
+              history: nextHistory,
+              scene: ev.scene,
+              conversationId: nextConversationId,
+              turns: nextTurns,
+            });
 
             setLoading(false);
             setSpeaking(true);
@@ -581,6 +613,7 @@ export default function YewneChatPage() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="写点什么…"
+                maxLength={2000}
                 rows={1}
                 className="font-hand flex-1 resize-none bg-transparent px-2 py-1.5 text-lg leading-relaxed text-[#504437] outline-none placeholder:text-[#504437]/35"
               />
@@ -677,6 +710,7 @@ export default function YewneChatPage() {
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="写点什么…"
+                    maxLength={2000}
                     rows={1}
                     className="font-hand flex-1 resize-none bg-transparent px-2 py-1.5 text-lg leading-relaxed text-[#504437] outline-none placeholder:text-[#504437]/35"
                   />

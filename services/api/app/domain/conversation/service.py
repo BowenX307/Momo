@@ -1,7 +1,7 @@
 """会话编排：safety → 场景分流 → llm 对话 → 拼装响应。
 
-刻意不在这里碰数据库、记忆、人格卡，下周五 demo 只串通这一条链路。
-单元测试通过传入 fake provider / classifier 来覆盖该模块（避免真调 LLM）。
+数据库持久化通过可选接口注入；未提供匿名用户标识时保持无状态行为。
+单元测试通过 fake provider / classifier / persistence 覆盖该模块，避免真实网络调用。
 
 降级策略：
 - safety 命中危机：直接固定文案，**不**进 LLM，也不浪费一次分类调用；
@@ -19,17 +19,18 @@ import asyncio
 import base64
 import json
 from collections.abc import AsyncGenerator
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import structlog
 
 from app.domain.conversation.schemas import (
     ChatDemoRequest,
     ChatDemoResponse,
-    Persona,
     Scene,
 )
+from app.domain.conversation.persistence import ConversationPersistence
 from app.domain.reaction.service import detect_reaction
+from app.domain.safety import SafetyReason
 from app.domain.safety.provider import SafetyProvider
 from app.domain.speech.service import _clean_for_tts
 from app.llm.classifier import SceneClassifier
@@ -79,6 +80,45 @@ async def _synthesize_audio(
         return "", "audio/mpeg", True
 
 
+async def _persist_exchange_safe(
+    persistence: ConversationPersistence | None,
+    request: ChatDemoRequest,
+    *,
+    scene: Scene,
+    reply: str,
+    safety_flag: SafetyReason,
+    emotion: str,
+    request_id: str,
+    is_mock: bool,
+    degraded: bool,
+) -> UUID | None:
+    """保存一轮对话；数据库异常只记录日志，不中断用户回复。"""
+    if persistence is None or request.external_user_id is None:
+        return request.conversation_id
+
+    try:
+        return await persistence.save_exchange(
+            external_user_id=request.external_user_id,
+            conversation_id=request.conversation_id,
+            scene=scene.value,
+            persona=request.persona.value,
+            user_text=request.user_text,
+            reply=reply,
+            safety_flag=safety_flag,
+            emotion=emotion,
+            request_id=request_id,
+            is_mock=is_mock,
+            degraded=degraded,
+        )
+    except Exception:
+        logger.exception(
+            "chat_demo_persistence_failed",
+            request_id=request_id,
+            conversation_id=str(request.conversation_id or ""),
+        )
+        return request.conversation_id
+
+
 async def handle_chat_demo(
     request: ChatDemoRequest,
     safety_provider: SafetyProvider,
@@ -87,6 +127,7 @@ async def handle_chat_demo(
     is_mock: bool,
     tts_provider: TTSProvider | None = None,
     tts_is_mock: bool = True,
+    persistence: ConversationPersistence | None = None,
 ) -> ChatDemoResponse:
     """处理一次 demo 对话。
 
@@ -110,15 +151,31 @@ async def handle_chat_demo(
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
         if tts_provider:
             audio_b64, audio_ct, audio_mock = await _synthesize_audio(
-                safety.fallback_text, scene, tts_provider, tts_is_mock, request_id,
+                safety.fallback_text,
+                scene,
+                tts_provider,
+                tts_is_mock,
+                request_id,
                 persona=request.persona.value,
             )
+        conversation_id = await _persist_exchange_safe(
+            persistence,
+            request,
+            scene=scene,
+            reply=safety.fallback_text,
+            safety_flag=safety.reason,
+            emotion="",
+            request_id=request_id,
+            is_mock=is_mock,
+            degraded=False,
+        )
         return ChatDemoResponse(
             reply=safety.fallback_text,
             scene=scene,
             safety_flag=safety.reason,
             is_mock=is_mock,
             request_id=request_id,
+            conversation_id=conversation_id,
             audio_base64=audio_b64,
             audio_content_type=audio_ct,
             audio_is_mock=audio_mock,
@@ -166,16 +223,32 @@ async def handle_chat_demo(
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
         if tts_provider:
             audio_b64, audio_ct, audio_mock = await _synthesize_audio(
-                reply, scene, tts_provider, tts_is_mock, request_id,
+                reply,
+                scene,
+                tts_provider,
+                tts_is_mock,
+                request_id,
                 persona=request.persona.value,
             )
         reaction = await reaction_task
+        conversation_id = await _persist_exchange_safe(
+            persistence,
+            request,
+            scene=scene,
+            reply=reply,
+            safety_flag="ok",
+            emotion=emotion,
+            request_id=request_id,
+            is_mock=is_mock,
+            degraded=False,
+        )
         return ChatDemoResponse(
             reply=reply,
             scene=scene,
             safety_flag="ok",
             is_mock=is_mock,
             request_id=request_id,
+            conversation_id=conversation_id,
             audio_base64=audio_b64,
             audio_content_type=audio_ct,
             audio_is_mock=audio_mock,
@@ -199,15 +272,31 @@ async def handle_chat_demo(
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
         if tts_provider:
             audio_b64, audio_ct, audio_mock = await _synthesize_audio(
-                mock_reply, scene, tts_provider, tts_is_mock, request_id,
+                mock_reply,
+                scene,
+                tts_provider,
+                tts_is_mock,
+                request_id,
                 persona=request.persona.value,
             )
+        conversation_id = await _persist_exchange_safe(
+            persistence,
+            request,
+            scene=scene,
+            reply=mock_reply,
+            safety_flag="ok",
+            emotion="",
+            request_id=request_id,
+            is_mock=True,
+            degraded=True,
+        )
         return ChatDemoResponse(
             reply=mock_reply,
             scene=scene,
             safety_flag="ok",
             is_mock=True,
             request_id=request_id,
+            conversation_id=conversation_id,
             degraded=True,
             audio_base64=audio_b64,
             audio_content_type=audio_ct,
@@ -242,6 +331,8 @@ async def stream_chat_demo(
     classifier: SceneClassifier,
     tts_provider: TTSProvider | None,
     tts_is_mock: bool,
+    is_mock: bool,
+    persistence: ConversationPersistence | None = None,
 ) -> AsyncGenerator[str, None]:
     """流式版本：LLM 逐句输出，每句完成立刻 TTS，以 SSE data 行 yield。"""
     request_id = uuid4().hex
@@ -252,7 +343,11 @@ async def stream_chat_demo(
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
         if tts_provider:
             audio_b64, audio_ct, audio_mock = await _synthesize_audio(
-                safety.fallback_text, scene, tts_provider, tts_is_mock, request_id,
+                safety.fallback_text,
+                scene,
+                tts_provider,
+                tts_is_mock,
+                request_id,
                 persona=request.persona.value,
             )
         yield (
@@ -268,6 +363,17 @@ async def stream_chat_demo(
             )
             + "\n\n"
         )
+        conversation_id = await _persist_exchange_safe(
+            persistence,
+            request,
+            scene=scene,
+            reply=safety.fallback_text,
+            safety_flag=safety.reason,
+            emotion="",
+            request_id=request_id,
+            is_mock=is_mock,
+            degraded=False,
+        )
         yield (
             "data: "
             + json.dumps(
@@ -278,6 +384,9 @@ async def stream_chat_demo(
                     "safety_flag": safety.reason,
                     "is_mock": False,
                     "request_id": request_id,
+                    "conversation_id": str(conversation_id)
+                    if conversation_id
+                    else None,
                     "degraded": False,
                 }
             )
@@ -302,6 +411,8 @@ async def stream_chat_demo(
 
     full_reply = ""
     sentence_idx = 0
+    response_is_mock = is_mock
+    degraded = False
 
     try:
         token_stream = provider.stream_complete(  # type: ignore[attr-defined]
@@ -315,7 +426,11 @@ async def stream_chat_demo(
             audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
             if tts_provider:
                 audio_b64, audio_ct, audio_mock = await _synthesize_audio(
-                    sentence, scene, tts_provider, tts_is_mock, request_id,
+                    sentence,
+                    scene,
+                    tts_provider,
+                    tts_is_mock,
+                    request_id,
                     persona=request.persona.value,
                 )
             yield (
@@ -350,10 +465,16 @@ async def stream_chat_demo(
                 history=history,
                 persona=request.persona.value,
             )
+            response_is_mock = True
+            degraded = True
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
         if tts_provider:
             audio_b64, audio_ct, audio_mock = await _synthesize_audio(
-                full_reply, scene, tts_provider, tts_is_mock, request_id,
+                full_reply,
+                scene,
+                tts_provider,
+                tts_is_mock,
+                request_id,
                 persona=request.persona.value,
             )
         yield (
@@ -372,6 +493,17 @@ async def stream_chat_demo(
         )
 
     emotion = await emotion_task
+    conversation_id = await _persist_exchange_safe(
+        persistence,
+        request,
+        scene=scene,
+        reply=full_reply,
+        safety_flag="ok",
+        emotion=emotion,
+        request_id=request_id,
+        is_mock=response_is_mock,
+        degraded=degraded,
+    )
     yield (
         "data: "
         + json.dumps(
@@ -380,9 +512,10 @@ async def stream_chat_demo(
                 "reply": full_reply,
                 "scene": scene.value,
                 "safety_flag": "ok",
-                "is_mock": False,
+                "is_mock": response_is_mock,
                 "request_id": request_id,
-                "degraded": False,
+                "conversation_id": str(conversation_id) if conversation_id else None,
+                "degraded": degraded,
                 "emotion": emotion,
             }
         )

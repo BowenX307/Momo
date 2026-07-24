@@ -62,3 +62,22 @@ def test_chat_demo_rejects_unknown_scene():
         json={"user_text": "hi", "scene": "not_a_real_scene"},
     )
     assert resp.status_code == 422
+
+
+def test_chat_demo_skips_persistence_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """即使请求带匿名用户 ID，配置关闭时也不创建数据库会话。"""
+    monkeypatch.setattr(settings, "persistence_enabled", False)
+
+    resp = client.post(
+        "/v1/chat/demo",
+        json={
+            "user_text": "今天有点累",
+            "scene": "stress",
+            "external_user_id": "browser-test-user",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["conversation_id"] is None

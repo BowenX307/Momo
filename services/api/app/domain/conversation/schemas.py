@@ -6,6 +6,7 @@ demo 阶段仅维护后端一份，前端按字符串字面量传入。
 
 from enum import Enum
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -41,7 +42,7 @@ class HistoryMessage(BaseModel):
     """单条历史消息，角色为 user 或 assistant。"""
 
     role: Literal["user", "assistant"]
-    content: str
+    content: str = Field(..., max_length=2000)
 
 
 class ChatDemoRequest(BaseModel):
@@ -51,7 +52,21 @@ class ChatDemoRequest(BaseModel):
     传 None，后续轮次把响应里返回的 scene 传回来，避免重复分类带来的延迟与成本。
     """
 
-    user_text: str = Field(..., description="用户本轮输入；空字符串会走 safety 兜底")
+    user_text: str = Field(
+        ...,
+        max_length=2000,
+        description="用户本轮输入（最多 2000 字符）；空字符串会走 safety 兜底",
+    )
+    external_user_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        description="前端生成的匿名用户标识；缺省时不持久化本轮对话",
+    )
+    conversation_id: UUID | None = Field(
+        default=None,
+        description="后端返回的会话 ID；第一轮为空，后续轮次原样传回",
+    )
     scene: Scene | None = Field(
         default=None,
         description="本轮场景；为 None 时后端用 SceneClassifier 自动分类",
@@ -62,14 +77,19 @@ class ChatDemoRequest(BaseModel):
     )
     history: list[HistoryMessage] = Field(
         default_factory=list,
-        max_length=20,
-        description="最近对话历史（最多 20 条 / 10 轮），不含本轮 user_text",
+        description="当前浏览器会话的对话历史，不含本轮 user_text",
     )
 
     @field_validator("scene", mode="before")
     @classmethod
     def _empty_scene_is_none(cls, v: object) -> object:
         """空串当作未指定。Unity 的 JsonUtility 会把 null 序列化成 ""，别让它吃 422。"""
+        return None if v == "" else v
+
+    @field_validator("conversation_id", mode="before")
+    @classmethod
+    def _empty_conversation_id_is_none(cls, v: object) -> object:
+        """兼容把空会话 ID 序列化成空串的客户端。"""
         return None if v == "" else v
 
 
@@ -87,6 +107,10 @@ class ChatDemoResponse(BaseModel):
     safety_flag: SafetyReason
     is_mock: bool
     request_id: str
+    conversation_id: UUID | None = Field(
+        default=None,
+        description="已持久化的会话 ID；未启用或写入失败时为空",
+    )
     degraded: bool = Field(
         default=False,
         description="true 表示原本走真模型但调用失败已降级到 Mock；前端可以加'临时离线'提示",

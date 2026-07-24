@@ -30,7 +30,7 @@ momo/
 | **pnpm**           | **包管理器**：下载 `apps/mobile`、`apps/web` 依赖，比默认 `npm` 省磁盘、速度快。安装见：[https://pnpm.io/installation](https://pnpm.io/installation)                                                 |
 | **Python 3.12+**   | 跑后端；若已装系统 Python，仍建议用 **uv** 隔离本项目环境（见下文）。                                                                                                                                 |
 | **uv**             | **Python 依赖与虚拟环境管理**：一条命令装好后端库、创建独立环境，避免搞乱系统 Python。安装见：[https://docs.astral.sh/uv/getting-started/installation/](https://docs.astral.sh/uv/getting-started/installation/) |
-| **Docker Desktop** | 在本地用**容器**跑 **Postgres**、**Redis** 等，和线上环境更接近。当前仓库**尚未附带** `docker-compose` 时，先装好即可；等仓库补上 compose 文件后，再按文件启动数据库。                                                           |
+| **Docker Desktop** | 可选。用于通过根目录 `compose.yaml` 统一启动 PostgreSQL；只测试聊天且关闭 persistence 时无需安装。                                                                                                        |
 | **Git**            | 版本控制；与 GitHub 同步代码。                                                                                                                                                        |
 | **编辑器**            | 推荐 VS Code 或 Cursor；装 TypeScript、Python、ESLint 等插件会更顺手。                                                                                                                    |
 
@@ -55,10 +55,13 @@ momo/
 
 ### 数据库 Postgres 与 Redis
 
-- **Postgres**：关系型数据库，用来存用户、会话、记忆等业务数据（规划中）。
+- **Postgres**：关系型数据库，当前保存匿名用户、聊天会话和消息。
 - **Redis**：内存数据库，常做缓存、队列、会话（规划中）。
 
-`.env.example` 里已经写了默认连接串（本机 `localhost`），**当前应用代码尚未接入库与 Redis**；接入后本地一般需要 Docker 起的 Postgres/Redis 实例。在此之前，**不影响**你先启动 API、改路由与健康检查。
+持久化由 `PERSISTENCE_ENABLED` 控制：
+
+- `false`：完全跳过 PostgreSQL，未安装数据库也能聊天。
+- `true`：保存用户、会话和消息，需要可用的 PostgreSQL，并先执行 Alembic migration。
 
 ---
 
@@ -84,6 +87,92 @@ uv run uvicorn app.main:app --reload
 - 默认：**[http://localhost:8000](http://localhost:8000)**
 - 健康检查：**[http://localhost:8000/health](http://localhost:8000/health)**
 - 接口文档：**[http://localhost:8000/docs](http://localhost:8000/docs)**
+
+只测试聊天、不保存数据时，保持：
+
+```env
+PERSISTENCE_ENABLED=false
+```
+
+## 使用 Docker 运行 PostgreSQL
+
+安装 Docker Desktop 后，不需要再单独安装 PostgreSQL。
+
+### 1. 启动数据库
+
+```bash
+# 仓库根目录
+docker compose up -d db
+docker compose ps
+```
+
+看到状态为 `healthy` 后继续。
+
+### 2. 配置后端
+
+```bash
+cd services/api
+cp .env.example .env
+```
+
+确认 `.env` 中有：
+
+```env
+PERSISTENCE_ENABLED=true
+DATABASE_URL=postgresql+psycopg://yewne:yewne_dev_password@localhost:5432/yewne_dev
+```
+
+安装依赖、创建表并启动后端：
+
+```bash
+uv sync
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload
+```
+
+### 3. 检查连接
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+响应中的 `persistence_enabled` 和 `database_connected` 都应为 `true`。
+
+浏览器一次打开到关闭视为一个会话。一个会话内部可以有多次问答；每位匿名用户在 PostgreSQL 中最多保留最近 7 个会话，创建第 8 个会话时会删除最早的会话及其消息。单条消息最多 2000 个字符。
+
+### 4. 查看数据
+
+```bash
+docker compose exec db psql -U yewne -d yewne_dev
+```
+
+```sql
+\dt
+SELECT id, user_id, created_at FROM conversations ORDER BY created_at DESC;
+SELECT role, content, created_at FROM messages ORDER BY created_at DESC LIMIT 20;
+\q
+```
+
+### 5. 停止或重启
+
+```bash
+docker compose stop db
+docker compose start db
+docker compose down
+```
+
+以上命令不会删除数据。只有确定要清空本地数据库时才执行：
+
+```bash
+docker compose down -v
+```
+
+### 常见问题
+
+- **端口 5432 被占用**：关闭本机 PostgreSQL，或把 Docker 端口和 `DATABASE_URL` 一起改成 `5433`。
+- **聊天正常但没有数据**：检查 `PERSISTENCE_ENABLED=true`、`database_connected=true`，以及前端请求是否带有 `external_user_id`。
+- **提示表不存在**：在 `services/api` 中执行 `uv run alembic upgrade head`。
+- **不保存聊天数据**：设置 `PERSISTENCE_ENABLED=false`，不需要启动 PostgreSQL。
 
 后端质量检查（改 Python 时建议跑）：
 
@@ -151,5 +240,3 @@ pnpm dev
 | 后端    | Python 3.12、FastAPI、Pydantic、uvicorn                 |
 | 数据与缓存 | Postgres、Redis（环境与配置已预留，业务接入进行中）                     |
 | LLM   | 通过配置接入（如 DeepSeek / 豆包）；秘钥只放 `.env`                  |
-
-

@@ -18,8 +18,12 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: list[str] = ["*"]  # 生产环境必须收紧
 
-    # 数据库（暂未启用）
-    database_url: str = "postgresql+psycopg://momo:momo@localhost:5432/momo"
+    # 数据库持久化；默认关闭，未安装 PostgreSQL 也能运行聊天功能
+    persistence_enabled: bool = False
+    database_url: str = (
+        "postgresql+psycopg://yewne:yewne_dev_password@localhost:5432/yewne_dev"
+    )
+    database_health_timeout_seconds: float = 2.0
 
     # Redis（暂未启用）
     redis_url: str = "redis://localhost:6379/0"

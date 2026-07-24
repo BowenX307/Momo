@@ -37,6 +37,10 @@ export interface HistoryMessage {
 
 export interface ChatDemoRequest {
   user_text: string;
+  /** 浏览器生成并长期保存的匿名用户标识；用于后端关联会话。 */
+  external_user_id?: string;
+  /** 第一轮为空，后续轮次传回后端返回的会话 ID。 */
+  conversation_id?: string | null;
   /** 可选：每个会话第一句留空，让后端自动分类；后续轮把响应里的 scene 传回，
    * 避免每轮都跑一次分类（多 1 次 LLM 调用）。 */
   scene?: Scene | null;
@@ -51,6 +55,7 @@ export interface ChatDemoResponse {
   safety_flag: SafetyFlag;
   is_mock: boolean;
   request_id: string;
+  conversation_id?: string | null;
   /** true 表示原本走真模型但调用失败已降级到 Mock */
   degraded: boolean;
   /** 音频与文字一起返回，省去第二次请求；空串时前端降级浏览器朗读 */
@@ -67,6 +72,8 @@ export interface ChatDemoResponse {
 export interface HealthResponse {
   status: string;
   env: string;
+  persistence_enabled?: boolean;
+  database_connected?: boolean | null;
   llm_provider: "mock" | "deepseek";
   llm_is_mock: boolean;
   stt_provider?: "mock" | "whisper";
@@ -263,6 +270,7 @@ export interface StreamDoneEvent {
   safety_flag: SafetyFlag;
   is_mock: boolean;
   request_id: string;
+  conversation_id?: string | null;
   degraded: boolean;
   emotion?: string;
 }
@@ -334,7 +342,8 @@ export async function fetchHealth(
 
 /** 拼一个等价的 curl 命令文本，用于调试面板"复制即可复刻"。history 不展示在 curl 里保持简洁。 */
 export function buildCurl(payload: ChatDemoRequest, baseUrl: string = API_BASE): string {
-  const { history: _history, ...rest } = payload;
+  const rest = { ...payload };
+  delete rest.history;
   const json = JSON.stringify(rest);
   return [
     `curl -X POST ${baseUrl}/v1/chat/demo \\`,
