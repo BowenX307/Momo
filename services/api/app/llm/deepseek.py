@@ -146,6 +146,11 @@ class DeepSeekProvider:
             "frequency_penalty": 0.4,
             "presence_penalty": 0.3,
             "max_tokens": 220,
+            # v4-flash 是推理模型，答案前会先吐 reasoning_content；这个人格 prompt
+            # 规则已经写得很死，不需要链式推理，关掉 thinking 既省延迟也避免
+            # reasoning token 把 max_tokens 挤占到把回复截断（2026-07-26 踩过，
+            # 线上实测有真实回复被截断成半句话）。
+            "thinking": {"type": "disabled"},
         }
         headers = {
             "Authorization": f"Bearer {settings.deepseek_api_key}",
@@ -197,6 +202,8 @@ class DeepSeekProvider:
             "presence_penalty": 0.3,
             "max_tokens": 220,
             "stream": True,
+            # 同 complete()：关掉推理，省延迟也避免截断。
+            "thinking": {"type": "disabled"},
         }
         headers = {
             "Authorization": f"Bearer {settings.deepseek_api_key}",
