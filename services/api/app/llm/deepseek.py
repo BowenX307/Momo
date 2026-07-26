@@ -248,7 +248,11 @@ class DeepSeekProvider:
             "model": settings.deepseek_model,
             "messages": messages,
             "temperature": 0.1,
-            "max_tokens": 10,
+            "max_tokens": 16,
+            # v4-flash 是推理模型，默认会先吐一段 reasoning_content 再给答案；
+            # 这里只要一个词，关掉 thinking 避免推理 token 把 max_tokens 提前吃完
+            # 导致 content 截断成空串（2026-07-26 踩过）。
+            "thinking": {"type": "disabled"},
         }
         headers = {
             "Authorization": f"Bearer {settings.deepseek_api_key}",
