@@ -55,6 +55,7 @@ export default function InternalWorkboardPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [newTodoTitle, setNewTodoTitle] = useState("");
+  const [newTodoDetail, setNewTodoDetail] = useState("");
   const [addingTodo, setAddingTodo] = useState(false);
 
   const [authorName, setAuthorName] = useState("");
@@ -87,15 +88,16 @@ export default function InternalWorkboardPage() {
     if (!title || addingTodo) return;
     setAddingTodo(true);
     try {
-      const todo = await createTodo({ title });
+      const todo = await createTodo({ title, detail: newTodoDetail.trim() });
       setTodos((prev) => [...prev, todo]);
       setNewTodoTitle("");
+      setNewTodoDetail("");
     } catch {
       setLoadError("添加待办失败");
     } finally {
       setAddingTodo(false);
     }
-  }, [newTodoTitle, addingTodo]);
+  }, [newTodoTitle, newTodoDetail, addingTodo]);
 
   const handleCycleStatus = useCallback(async (todo: TodoItem) => {
     const next: Record<TodoStatus, TodoStatus> = {
@@ -151,12 +153,19 @@ export default function InternalWorkboardPage() {
 
   return (
     <div className="mx-auto min-h-dvh w-full max-w-5xl bg-stone-50 px-4 py-8 text-stone-800 sm:px-8">
-      <header className="mb-8">
+      <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">于你 IT 内部工作台</h1>
         <p className="mt-1 text-sm text-stone-500">
           左边是 IT 现阶段的 todolist,右边可以直接打字或录音提需求 / 报 bug。
         </p>
       </header>
+
+      <div className="mb-8 rounded-lg border border-stone-200 bg-white px-4 py-3 text-xs leading-relaxed text-stone-500">
+        <span className="font-medium text-stone-600">怎么用:</span>
+        {" "}Todolist 里点状态标签(待办/进行中/已完成)可以切换状态,新增时标题必填、详情选填,列表项右侧悬停可删除。
+        提需求 / 报 Bug 选好类型,打字描述,或者点右下角麦克风直接说,系统会自动转成文字(转完还能再改),确认没问题再点提交;
+        提交后会出现在下面的历史列表里,IT 处理后会把状态从"待处理"依次点成"已确认""已完成"。
+      </div>
 
       {loadError && (
         <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
@@ -169,22 +178,31 @@ export default function InternalWorkboardPage() {
         <section>
           <h2 className="mb-3 text-lg font-medium">Todolist</h2>
 
-          <div className="mb-4 flex gap-2">
-            <input
-              value={newTodoTitle}
-              onChange={(e) => setNewTodoTitle(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAddTodo()}
-              placeholder="新增一条待办…"
-              className="flex-1 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-stone-500"
+          <div className="mb-4 rounded-lg border border-stone-200 bg-white p-3">
+            <div className="flex gap-2">
+              <input
+                value={newTodoTitle}
+                onChange={(e) => setNewTodoTitle(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleAddTodo()}
+                placeholder="新增一条待办的标题…"
+                className="flex-1 rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-500"
+              />
+              <button
+                type="button"
+                onClick={handleAddTodo}
+                disabled={addingTodo || !newTodoTitle.trim()}
+                className="shrink-0 rounded-lg bg-stone-800 px-4 py-2 text-sm text-white disabled:opacity-40"
+              >
+                添加
+              </button>
+            </div>
+            <textarea
+              value={newTodoDetail}
+              onChange={(e) => setNewTodoDetail(e.target.value)}
+              placeholder="详细信息(选填)…"
+              rows={2}
+              className="mt-2 w-full resize-none rounded-lg border border-stone-200 px-3 py-1.5 text-xs outline-none focus:border-stone-500"
             />
-            <button
-              type="button"
-              onClick={handleAddTodo}
-              disabled={addingTodo || !newTodoTitle.trim()}
-              className="rounded-lg bg-stone-800 px-4 py-2 text-sm text-white disabled:opacity-40"
-            >
-              添加
-            </button>
           </div>
 
           {loading ? (
