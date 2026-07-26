@@ -144,3 +144,80 @@ class Message(Base):
     )
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
+
+
+class TodoItem(Base):
+    """内部工作看板的待办项，供产品/设计/商业查看 IT 现阶段进度。"""
+
+    __tablename__ = "todo_items"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('open', 'in_progress', 'done')",
+            name="ck_todo_items_status",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    detail: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="open",
+        server_default="open",
+    )
+    position: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class FeedbackItem(Base):
+    """产品/设计/商业提交的需求或 bug 反馈。"""
+
+    __tablename__ = "feedback_items"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('new', 'triaged', 'done')",
+            name="ck_feedback_items_status",
+        ),
+        CheckConstraint(
+            "kind IN ('bug', 'feature', 'other')",
+            name="ck_feedback_items_kind",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    author_name: Mapped[str] = mapped_column(String(64), nullable=False, default="", server_default="")
+    kind: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="other",
+        server_default="other",
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="new",
+        server_default="new",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
