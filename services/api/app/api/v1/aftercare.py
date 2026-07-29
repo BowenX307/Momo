@@ -4,14 +4,31 @@
 `app.domain.aftercare.service.generate_aftercare` 里，失败静默兜底。
 """
 
-from fastapi import APIRouter
+from typing import Annotated
 
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
 from app.domain.aftercare.schemas import AftercareRequest, AftercareResponse
-from app.domain.aftercare.service import generate_aftercare
+from app.domain.aftercare.service import archive_round, generate_aftercare
+from app.infra.database import get_db_session
 
 router = APIRouter(prefix="/aftercare", tags=["aftercare"])
+DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
 
 
 @router.post("/generate", response_model=AftercareResponse)
-async def aftercare_generate(request: AftercareRequest) -> AftercareResponse:
-    return await generate_aftercare(request)
+async def aftercare_generate(
+    request: AftercareRequest,
+    session: DatabaseSession,
+) -> AftercareResponse:
+    result = await generate_aftercare(request)
+    if settings.persistence_enabled and request.conversation_id and request.external_user_id:
+        await archive_round(
+            session,
+            conversation_id=request.conversation_id,
+            external_user_id=request.external_user_id,
+            result=result,
+        )
+    return result

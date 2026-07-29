@@ -22,6 +22,12 @@ class UserRepository:
         result = await self._session.execute(statement)
         return result.scalar_one_or_none()
 
+    async def get_by_phone_number(self, phone_number: str) -> User | None:
+        """根据手机号查询用户（登录用：手机号已绑定过就认那个老用户）。"""
+        statement = select(User).where(User.phone_number == phone_number)
+        result = await self._session.execute(statement)
+        return result.scalar_one_or_none()
+
     async def get_or_create(self, external_id: str) -> User:
         """返回已有用户；不存在时创建但不提交事务。"""
         user = await self.get_by_external_id(external_id)
@@ -96,6 +102,16 @@ class ConversationRepository:
             delete(Conversation).where(Conversation.id.in_(stale_ids))
         )
 
+    async def list_ended_for_user(self, user_id: UUID) -> list[Conversation]:
+        """列出用户已结束归档的轮次，最新的在前。进行中的当前轮不出现在这里。"""
+        statement = (
+            select(Conversation)
+            .where(Conversation.user_id == user_id, Conversation.ended_at.is_not(None))
+            .order_by(Conversation.ended_at.desc())
+        )
+        result = await self._session.execute(statement)
+        return list(result.scalars().all())
+
 
 class MessageRepository:
     """封装消息写入和最近消息查询。"""
@@ -148,3 +164,13 @@ class MessageRepository:
         messages = list(result.scalars().all())
         messages.reverse()
         return messages
+
+    async def list_all(self, conversation_id: UUID) -> list[Message]:
+        """按时间顺序返回某一轮的完整消息（不截断），用于历史轮次回看。"""
+        statement = (
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at)
+        )
+        result = await self._session.execute(statement)
+        return list(result.scalars().all())

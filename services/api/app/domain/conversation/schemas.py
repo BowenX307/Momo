@@ -128,3 +128,23 @@ class ChatDemoResponse(BaseModel):
             "前端回落 Idle。取值随人格：youyou=开心/伤心/疑惑/肯定/否定，nini=开心/伤心/疑惑/关心"
         ),
     )
+
+
+class RoundSummary(BaseModel):
+    """一个已结束归档的对话轮次，用于"查看历史轮次"列表。"""
+
+    conversation_id: UUID
+    persona: Persona
+    scene: str | None = Field(default=None, description="该轮判定的场景，可能为空")
+    mood: str | None = Field(default=None, description="结束时生成的拍立得情绪档")
+    letter: str | None = Field(default=None, description="结束时生成的拍立得回信正文")
+    created_at: str = Field(description="轮次开始时间，ISO 8601")
+    ended_at: str = Field(description="轮次结束时间，ISO 8601")
+
+
+class RoundMessage(BaseModel):
+    """历史轮次里的一条消息（只读回看用）。"""
+
+    role: Literal["user", "assistant"]
+    content: str
+    created_at: str = Field(description="ISO 8601")

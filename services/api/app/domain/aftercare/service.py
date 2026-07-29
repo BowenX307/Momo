@@ -19,12 +19,16 @@
 
 import json
 import re
+from datetime import UTC, datetime
+from uuid import UUID
 
 import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.domain.aftercare.schemas import AftercareRequest, AftercareResponse, Mood
 from app.domain.safety import check as safety_check
+from app.infra.repositories import ConversationRepository, UserRepository
 
 # ── 12 类场景 → 正面照片情绪档 ────────────────────────────────────────────
 # 陪伴型/协助型 → calm;轻度吐槽/压力过载/关系困扰 → anxious;
@@ -195,6 +199,9 @@ async def generate_aftercare(request: AftercareRequest) -> AftercareResponse:
         "messages": messages,
         "temperature": 0.8,
         "max_tokens": 300,
+        # v4-flash 是推理模型,推理长度不固定,曾经把 max_tokens 提前吃完导致
+        # content 截断/解析失败、静默 fallback 成罐头信(2026-07-26 同类坑，见 deepseek.py)。
+        "thinking": {"type": "disabled"},
     }
     headers = {
         "Authorization": f"Bearer {settings.deepseek_api_key}",
@@ -211,3 +218,31 @@ async def generate_aftercare(request: AftercareRequest) -> AftercareResponse:
         return _fallback(persona)
 
     return _parse(content) or _fallback(persona)
+
+
+async def archive_round(
+    session: AsyncSession,
+    *,
+    conversation_id: UUID,
+    external_user_id: str,
+    result: AftercareResponse,
+) -> None:
+    """把这轮的拍立得结果写回 conversation(ended_at/mood/letter),供"查看历史轮次"用。
+
+    找不到用户/会话,或写入失败,都静默跳过——不影响拍立得本身已经生成并返回给前端。
+    """
+    try:
+        user = await UserRepository(session).get_by_external_id(external_user_id)
+        if user is None:
+            return
+        conversation = await ConversationRepository(session).get_for_user(
+            conversation_id, user.id
+        )
+        if conversation is None:
+            return
+        conversation.ended_at = datetime.now(UTC)
+        conversation.mood = result.mood
+        conversation.letter = result.letter
+        await session.commit()
+    except Exception:
+        await session.rollback()

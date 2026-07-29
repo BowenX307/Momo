@@ -30,6 +30,7 @@ class User(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     external_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    phone_number: Mapped[str | None] = mapped_column(String(20), unique=True, index=True)
     data_consent: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
@@ -74,6 +75,9 @@ class Conversation(Base):
         default="nini",
         server_default="nini",
     )
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    mood: Mapped[str | None] = mapped_column(String(16))
+    letter: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

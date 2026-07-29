@@ -153,6 +153,9 @@ export type AftercareMood = "down" | "anxious" | "calm";
 export interface AftercareRequest {
   persona: Persona;
   history?: HistoryMessage[];
+  /** 传了才会把这轮结束归档（ended_at/mood/letter 落库），配合 external_user_id 一起传。 */
+  conversation_id?: string | null;
+  external_user_id?: string;
 }
 
 export interface AftercareResponse {
@@ -335,6 +338,151 @@ export async function fetchHealth(
     const res = await fetch(`${base}/health`, { signal: options.signal });
     if (!res.ok) return null;
     return (await res.json()) as HealthResponse;
+  } catch {
+    return null;
+  }
+}
+
+export interface RoundSummary {
+  conversation_id: string;
+  persona: Persona;
+  scene?: string | null;
+  mood?: AftercareMood | null;
+  letter?: string | null;
+  created_at: string;
+  ended_at: string;
+}
+
+export interface RoundMessage {
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+}
+
+/** 调 /v1/conversation/rounds：列出该用户已结束归档的历史轮次，最新在前。 */
+export async function fetchRounds(
+  externalUserId: string,
+  options: { signal?: AbortSignal; baseUrl?: string } = {},
+): Promise<RoundSummary[]> {
+  const base = options.baseUrl ?? API_BASE;
+  const url = `${base}/v1/conversation/rounds?external_user_id=${encodeURIComponent(externalUserId)}`;
+  const res = await fetch(url, { signal: options.signal });
+  if (!res.ok) throw new YewneApiError(`HTTP ${res.status}`, res.status);
+  return (await res.json()) as RoundSummary[];
+}
+
+/** 调 /v1/conversation/rounds/{id}/messages：某一轮的完整消息（只读回看）。 */
+export async function fetchRoundMessages(
+  conversationId: string,
+  externalUserId: string,
+  options: { signal?: AbortSignal; baseUrl?: string } = {},
+): Promise<RoundMessage[]> {
+  const base = options.baseUrl ?? API_BASE;
+  const url = `${base}/v1/conversation/rounds/${conversationId}/messages?external_user_id=${encodeURIComponent(externalUserId)}`;
+  const res = await fetch(url, { signal: options.signal });
+  if (!res.ok) throw new YewneApiError(`HTTP ${res.status}`, res.status);
+  return (await res.json()) as RoundMessage[];
+}
+
+export interface SendCodeResponse {
+  ok: boolean;
+}
+
+export interface VerifyCodeResponse {
+  token: string;
+  /** 登录后应使用的匿名标识；手机号已绑过老账号时会是老账号的，前端要用这个覆盖本地存储 */
+  external_user_id: string;
+  expires_in_seconds: number;
+}
+
+export interface MeResponse {
+  external_user_id: string;
+  phone_number?: string | null;
+}
+
+export interface AuthApiErrorBody {
+  code: string;
+  message: string;
+}
+
+/** 调 /v1/auth/send-code。失败时 err.body 是 {code, message}，code 取值：
+ * cooldown(发送太频繁) / daily_limit(今日上限) / sms_failed(短信服务出错)。 */
+export async function fetchSendCode(
+  phoneNumber: string,
+  options: { signal?: AbortSignal; baseUrl?: string } = {},
+): Promise<SendCodeResponse> {
+  const base = options.baseUrl ?? API_BASE;
+  const res = await fetch(`${base}/v1/auth/send-code`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phone_number: phoneNumber }),
+    signal: options.signal,
+  });
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    body = undefined;
+  }
+  if (!res.ok) throw new YewneApiError(`HTTP ${res.status}`, res.status, body);
+  return body as SendCodeResponse;
+}
+
+/** 调 /v1/auth/verify-code。失败时 err.body 是 {code, message}，code 取值：invalid_code。 */
+export async function fetchVerifyCode(
+  phoneNumber: string,
+  code: string,
+  externalUserId: string,
+  options: { signal?: AbortSignal; baseUrl?: string } = {},
+): Promise<VerifyCodeResponse> {
+  const base = options.baseUrl ?? API_BASE;
+  const res = await fetch(`${base}/v1/auth/verify-code`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      phone_number: phoneNumber,
+      code,
+      external_user_id: externalUserId,
+    }),
+    signal: options.signal,
+  });
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    body = undefined;
+  }
+  if (!res.ok) throw new YewneApiError(`HTTP ${res.status}`, res.status, body);
+  return body as VerifyCodeResponse;
+}
+
+/** 调 /v1/auth/logout。 */
+export async function fetchLogout(
+  token: string,
+  options: { signal?: AbortSignal; baseUrl?: string } = {},
+): Promise<void> {
+  const base = options.baseUrl ?? API_BASE;
+  await fetch(`${base}/v1/auth/logout`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+    signal: options.signal,
+  });
+}
+
+/** 调 /v1/auth/me；token 失效/过期时返回 null，不抛错(调用方按"未登录"处理)。 */
+export async function fetchMe(
+  token: string,
+  options: { signal?: AbortSignal; baseUrl?: string } = {},
+): Promise<MeResponse | null> {
+  const base = options.baseUrl ?? API_BASE;
+  try {
+    const res = await fetch(`${base}/v1/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: options.signal,
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as MeResponse;
   } catch {
     return null;
   }
