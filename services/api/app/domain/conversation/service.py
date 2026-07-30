@@ -26,6 +26,7 @@ import structlog
 from app.domain.conversation.schemas import (
     ChatDemoRequest,
     ChatDemoResponse,
+    HistoryMessage,
     Scene,
 )
 from app.domain.conversation.persistence import ConversationPersistence
@@ -40,6 +41,47 @@ from app.tts.provider import TTSError, TTSProvider
 _SENTENCE_ENDS = frozenset("。？！…\n")
 
 logger = structlog.get_logger(__name__)
+
+# [2026-07-29] 服务端 history 字符预算。schemas 那边的 max_length=200 只挡住条数，
+# 200 条 × 2000 字符仍有 40 万字符可以进模型，所以这里再按字符总量收一道——
+# 这一层才是真正的成本控制，条数上限只负责挡掉明显异常的请求。
+# 24000 字符对真实会话非常宽松（本产品单条通常一两百字），正常用户不会触发。
+_MAX_HISTORY_CHARS = 24_000
+
+
+def _build_history(messages: list[HistoryMessage]) -> list[dict] | None:
+    """转成 provider 需要的格式，并按字符预算从最近往前保留。
+
+    [2026-07-29] 原实现是 `[{...} for m in request.history]` 直接原样转发，
+    中间没有任何截断或预算控制。history 由客户端提供且不可信——绕过前端直接
+    发请求就能塞进任意多历史，全部计入 DeepSeek 账单，且 safety 层只检查
+    user_text 不检查 history。
+
+    截断放在服务端而不是前端：前端的限制可以被绕过，这里不行。
+    丢弃从最早的消息开始，保住最近的上下文（对话连贯性影响最小）。
+    """
+    if not messages:
+        return None
+
+    kept: list[dict] = []
+    remaining = _MAX_HISTORY_CHARS
+    for message in reversed(messages):
+        remaining -= len(message.content)
+        if remaining < 0:
+            break
+        kept.append({"role": message.role, "content": message.content})
+    kept.reverse()
+
+    dropped = len(messages) - len(kept)
+    if dropped:
+        logger.info(
+            "chat_history_truncated",
+            received=len(messages),
+            kept=len(kept),
+            dropped=dropped,
+            budget_chars=_MAX_HISTORY_CHARS,
+        )
+    return kept or None
 
 
 async def _detect_emotion_safe(user_text: str, provider: LLMProvider) -> str:
@@ -191,11 +233,7 @@ async def handle_chat_demo(
     else:
         scene = request.scene
 
-    history = (
-        [{"role": m.role, "content": m.content} for m in request.history]
-        if request.history
-        else None
-    )
+    history = _build_history(request.history)
 
     try:
         reply, emotion = await asyncio.gather(
@@ -399,11 +437,7 @@ async def stream_chat_demo(
     else:
         scene = request.scene
 
-    history = (
-        [{"role": m.role, "content": m.content} for m in request.history]
-        if request.history
-        else None
-    )
+    history = _build_history(request.history)
 
     emotion_task = asyncio.create_task(
         _detect_emotion_safe(request.user_text, provider)

@@ -75,9 +75,15 @@ class ChatDemoRequest(BaseModel):
         default=Persona.NINI,
         description="AI 人格选择；默认 nini（妮妮），可切换为 youyou（优优）",
     )
+    # [2026-07-29] 新增 max_length：原先只限制单条 content 2000 字符，条数完全不设限，
+    # 一个请求可以塞进上千条历史并被原样转发给 DeepSeek 全额计费。
+    # 阈值取 200 而非更紧的值：这一层只负责挡掉明显异常的请求（实测攻击是 800 条起），
+    # 真正的成本控制由 service 层的 _MAX_HISTORY_CHARS 字符预算承担，所以这里可以给足
+    # 余量、优先避免误伤真实长会话。超过 200 条即视为异常请求，直接 422。
     history: list[HistoryMessage] = Field(
         default_factory=list,
-        description="当前浏览器会话的对话历史，不含本轮 user_text",
+        max_length=200,
+        description="当前浏览器会话的对话历史，不含本轮 user_text（最多 200 条）",
     )
 
     @field_validator("scene", mode="before")
