@@ -8,7 +8,9 @@
 
 不是心理治疗，不是泛聊机器人——**只做"有人在"这件事**：用户说出心情，于你用温暖但不油腻的语言接住，帮 ta 命名情绪、打断内耗、在孤独时陪着。支持**语音对话**（说话进、语音回），有 2 个不同性格的陪伴体。
 
-现状：**Demo 阶段**。核心链路跑通（语音 ↔ 前端 ↔ 后端 ↔ DeepSeek LLM），线上 demo 在 `uniai.net.cn`。还没接数据库和多账号体系，会话历史暂存在浏览器 localStorage。
+现状：**Demo 阶段**。核心链路跑通（语音 ↔ 前端 ↔ 后端 ↔ DeepSeek LLM），线上 demo 在 `uniai.net.cn`。
+
+数据库持久化层已落地（用户 / 会话 / 消息，PostgreSQL + Alembic，见 `app/infra/`），由 `.env` 里的 `PERSISTENCE_ENABLED` 开关控制，**本地默认关闭**——不装 PostgreSQL 也能跑通聊天。**还没有登录 / 多账号体系**：用户身份靠前端生成的匿名 `external_user_id`，未做校验。
 
 ---
 

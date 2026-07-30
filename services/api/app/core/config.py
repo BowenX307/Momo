@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ENV_FILE = Path(__file__).parent.parent.parent / ".env"
@@ -15,8 +16,31 @@ class Settings(BaseSettings):
     env: Literal["dev", "staging", "prod"] = "dev"
     debug: bool = True
 
-    # CORS
-    cors_origins: list[str] = ["*"]  # 生产环境必须收紧
+    # CORS —— 允许跨源访问本 API 的站点白名单。
+    # [2026-07-29] 原值是 ["*"](任何站点),配合 allow_credentials=True 时 Starlette 会
+    # 回显调用方 Origin 并附带 Allow-Credentials,等于给每个源都发了一张带凭证的通行证。
+    #
+    # 线上 uniai.net.cn 同时提供前端页面和 /v1 API,属于同源,浏览器不做 CORS 检查,
+    # 所以收紧这里对线上网页没有影响;Unity 与手机 App 是原生客户端,也不受 CORS 约束。
+    # 真正需要放行的只有本地开发(localhost:3000 → 127.0.0.1:8000 端口不同即跨域)。
+    #
+    # 要新增域名(预览环境 / 测试环境 / 其它子域)时:改 .env 里的 CORS_ORIGINS,逗号分隔,
+    # 不要改这里的默认值——默认值只作为没配 .env 时的兜底。带协议头,不要写路径,例如:
+    #   CORS_ORIGINS=https://uniai.net.cn,https://staging.uniai.net.cn
+    cors_origins: list[str] = [
+        "https://uniai.net.cn",
+        "https://www.uniai.net.cn",  # 带 www 在浏览器眼里是另一个源
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",  # 与 localhost 同样视为不同源,两个都要写
+    ]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _split_comma_separated_origins(cls, v: object) -> object:
+        """允许 .env 里写 `a,b,c` 而不是 JSON 数组，配置起来更顺手。"""
+        if isinstance(v, str):
+            return [item.strip() for item in v.split(",") if item.strip()]
+        return v
 
     # 数据库持久化；默认关闭，未安装 PostgreSQL 也能运行聊天功能
     persistence_enabled: bool = False

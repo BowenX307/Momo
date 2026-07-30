@@ -28,3 +28,21 @@ def test_history_message_rejects_more_than_2000_characters() -> None:
 def test_user_text_rejects_more_than_2000_characters() -> None:
     with pytest.raises(ValidationError):
         ChatDemoRequest(user_text="x" * 2001)
+
+
+# [2026-07-29] 以下两个用例覆盖新加的 history 条数上限（200 条）。
+def test_history_accepts_up_to_200_messages() -> None:
+    """200 条是上限本身，必须放行——正常长会话不应被误伤。"""
+    history = [HistoryMessage(role="user", content="嗯") for _ in range(200)]
+
+    request = ChatDemoRequest(user_text="继续聊", history=history)
+
+    assert len(request.history) == 200
+
+
+def test_history_rejects_more_than_200_messages() -> None:
+    """条数无上限时，一个请求可以塞进上千条历史并被全额计费。"""
+    history = [HistoryMessage(role="user", content="嗯") for _ in range(201)]
+
+    with pytest.raises(ValidationError):
+        ChatDemoRequest(user_text="继续聊", history=history)
