@@ -37,3 +37,6 @@ logs/
 docs/团队API充值.md
 docs/api.md
 docs/unienv.md
+
+# 个人工作笔记(不进版本库)
+*.local.md
