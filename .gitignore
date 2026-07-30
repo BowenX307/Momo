@@ -36,4 +36,4 @@ logs/
 # 含账号密码,严禁提交
 docs/团队API充值.md
 docs/api.md
-docs/unienv.md
+docs/unienv*.md
