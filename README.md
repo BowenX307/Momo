@@ -11,8 +11,6 @@ momo/
 │   └── web/             # 网站抢先体验页（Next.js）
 ├── services/
 │   └── api/             # 后端 API（Python + FastAPI）
-├── packages/
-│   └── shared-types/    # 前后端共用的 TypeScript 类型（逐步充实）
 └── docs/                # 项目文档（非工程说明多在这里）
 ```
 
@@ -225,7 +223,7 @@ pnpm dev
 | 手机界面与交互      | `apps/mobile/`                           |
 | 官网 / 落地页     | `apps/web/`                              |
 | 接口、鉴权、和模型打交道 | `services/api/app/`（按 `domain/` 等业务文件夹找） |
-| 前后端共用的类型名、枚举 | `packages/shared-types/`                 |
+| 前后端共用的类型名、枚举 | `apps/web/lib/api/yewne.ts`（前端侧手写，与后端 schemas 手动对齐） |
 
 
 ---
