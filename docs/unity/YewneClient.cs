@@ -9,8 +9,10 @@
 //        yewneClient.OnStateChanged += s  => animator.SetInteger("state", (int)s);  // 待机/思考/说话
 //        yewneClient.OnEmotion      += e  => SetFace(e);                            // 用户的情绪
 //        yewneClient.OnReply        += t  => subtitle.text = t;                     // 字幕
+//        yewneClient.OnAftercare    += a  => ShowPolaroid(a.mood, a.letter);         // 拍立得回信
 //
 //        yewneClient.Say("今天好累啊");   // 用户说了一句话 → 小人开始思考 → 说话 → 回到待机
+//        yewneClient.TakeAftercare();     // 用户点相机 → 生成回信 + 决定用哪张自拍(与 Say 相互独立,不占用三个状态)
 //
 // 三个状态不用问服务器,这个脚本已经按请求的生命周期帮你切好了。
 // 详细字段说明见「yewne 接入说明书.md」。有问题找后端(Bowen)。
@@ -58,6 +60,9 @@ public class YewneClient : MonoBehaviour
     public event Action<string> OnReaction;
     /// <summary>小人这一轮说的话,用来显示字幕。</summary>
     public event Action<string> OnReply;
+    /// <summary>拍立得回信生成好了:mood 决定用哪张 POV 自拍,letter 是印在背面的回信正文。
+    /// 由 <see cref="TakeAftercare"/> 触发,和 Say() 的三个状态无关,不会打断/被打断。</summary>
+    public event Action<AftercareResponse> OnAftercare;
     /// <summary>出错了(断网 / 服务器挂了)。状态会自动回到 Idle。</summary>
     public event Action<string> OnError;
 
@@ -83,6 +88,55 @@ public class YewneClient : MonoBehaviour
     {
         _history.Clear();
         _scene = null;
+    }
+
+    bool _aftercareBusy;
+
+    /// <summary>拍立得:相机按钮点击时调用。读当前对话上下文,让小人现写一段回信,
+    /// 同时给出 mood(down/anxious/calm)决定用哪张 POV 自拍。结果从 <see cref="OnAftercare"/> 拿。
+    /// 空历史(还没聊过)也能调,后端会落 calm 兜底,不会报错。
+    /// 和 Say() 的思考/说话流程完全独立,不占用 <see cref="State"/>,可以随时调用。</summary>
+    public void TakeAftercare()
+    {
+        if (_aftercareBusy) return;               // 上一次还没回来,忽略重复点击
+        _aftercareBusy = true;
+        StartCoroutine(AftercareRoutine());
+    }
+
+    IEnumerator AftercareRoutine()
+    {
+        var payload = JsonUtility.ToJson(new AftercareRequest
+        {
+            persona = persona,
+            history = _history.ToArray(),
+        });
+
+        using (var req = new UnityWebRequest(baseUrl + "/v1/aftercare/generate", "POST"))
+        {
+            req.uploadHandler   = new UploadHandlerRaw(Encoding.UTF8.GetBytes(payload));
+            req.downloadHandler = new DownloadHandlerBuffer();
+            req.SetRequestHeader("Content-Type", "application/json");
+            req.timeout = 15;
+
+            yield return req.SendWebRequest();
+            _aftercareBusy = false;
+
+            if (req.result != UnityWebRequest.Result.Success)
+            {
+                OnError?.Invoke(req.error);
+                yield break;
+            }
+
+            try
+            {
+                var res = JsonUtility.FromJson<AftercareResponse>(req.downloadHandler.text);
+                OnAftercare?.Invoke(res);
+            }
+            catch (Exception e)
+            {
+                OnError?.Invoke("解析拍立得响应失败: " + e.Message);
+            }
+        }
     }
 
     IEnumerator SayRoutine(string userText)
@@ -242,5 +296,22 @@ public class YewneClient : MonoBehaviour
         public bool   degraded;      // true = 模型挂了,当前是兜底回复
         public bool   is_mock;       // true = 假数据
         public string request_id;
+    }
+
+    [Serializable]
+    public class AftercareRequest
+    {
+        public string persona;
+        public Msg[]  history;
+    }
+
+    [Serializable]
+    public class AftercareResponse
+    {
+        public string mood;    // down | anxious | calm —— 决定用哪张 POV 自拍
+        public string quote;   // 已废弃,内容与 letter 相同,忽略即可
+        public string letter;  // 回信正文,≤100 字,印在拍立得背面
+        public string scene;   // 判定的场景键,调试用,不用展示
+        public bool   is_mock; // true = 走了兜底文案,非模型现写
     }
 }
