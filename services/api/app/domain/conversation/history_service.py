@@ -1,8 +1,11 @@
 """"查看历史轮次"的读取逻辑：列出某用户已结束的轮次 + 某一轮的完整消息。
 
-归属校验方式和项目里其它地方一致：拿前端传的 external_user_id 去查 user，
-再确认 conversation 属于这个 user——和现有信任模型一样，没有做真正的鉴权
-（见 memory：external_id 可伪造是已知且暂不处理的安全债）。
+归属校验：拿传入的 external_user_id 查 user，再确认 conversation 属于这个 user。
+
+[2026-07-29] 这里收到的 external_user_id 已经过路由层的身份裁决（见
+`app/api/v1/deps.py` 的 `resolve_owner_id`）：带有效 token 的请求会被换成 token 自己的
+身份，所以登录用户无法被冒名读取。匿名请求仍然是「信任前端传的字符串」——那部分可伪造
+的问题还在，是否强制登录属产品决定。本模块只负责按给定身份查数据，不重复做裁决。
 """
 
 from uuid import UUID
