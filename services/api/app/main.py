@@ -31,11 +31,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS: 开发阶段允许所有，上线前必须收紧
+# CORS: 白名单见 config.cors_origins（可用 .env 的 CORS_ORIGINS 覆盖）
+# [2026-07-29] allow_credentials 由 True 改为 False。它控制的是浏览器自动携带的凭证
+# （cookie、HTTP basic auth），而本项目的登录态走 Authorization 头里的 token——那是前端
+# 显式加上的普通请求头，不属于 CORS 的"凭证"，因此关掉不影响登录。
+# 关掉的原因：allow_credentials=True 时 Starlette 不会回 "*"，而是回显调用方 Origin
+# （starlette/middleware/cors.py 的 allow_all_origins + allow_credentials 分支），
+# 于是"通配符 + 凭证会被浏览器拒绝"这层规范保护失效。同时 /internal 在 nginx 层用的是
+# basic auth，浏览器会自动重发，配上带凭证的跨源授权就能被恶意页面借用。
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
