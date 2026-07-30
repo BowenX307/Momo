@@ -67,6 +67,16 @@ export function getOrCreateExternalUserId(): string {
   }
 }
 
+/** 登录成功后，如果后端认的是老账号（external_id 和本地不一样），用这个覆盖本地存储。 */
+export function setExternalUserId(externalUserId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(USER_ID_KEY, externalUserId);
+  } catch {
+    // localStorage 不可用时，本次页面仍可用刚拿到的 id，只是刷新后会丢
+  }
+}
+
 export function loadSession(persona: Persona): PersistedSession | null {
   if (typeof window === "undefined") return null;
   try {

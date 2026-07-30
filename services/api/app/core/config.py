@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     )
     database_health_timeout_seconds: float = 2.0
 
-    # Redis（暂未启用）
+    # Redis（验证码 + 登录 token 存这里）
     redis_url: str = "redis://localhost:6379/0"
 
     # LLM 供应商选择：dev 默认走 mock；要接真模型时设为 "deepseek" 并填 key
@@ -79,6 +79,24 @@ class Settings(BaseSettings):
     aliyun_safety_api_version: str = "2022-03-02"
     aliyun_safety_service: str = "ugc_moderation_byllm_pro"
     aliyun_region_id: str = "cn-hangzhou"
+
+    # 短信验证码登录
+    # ⚠️ 专用独立的 key,不能复用上面内容安全的 aliyun_access_key_id/secret——
+    # 那把是 Ronnie 的账号，没有 dysms 权限；这把短信 key 也没有内容安全权限，
+    # 两个用途混用一把 key 会导致其中一个功能静默失效(2026-07-28 踩过账号不对的坑)。
+    sms_provider: Literal["mock", "aliyun"] = "mock"
+    sms_timeout_seconds: float = 10.0
+    aliyun_sms_access_key_id: str = ""
+    aliyun_sms_access_key_secret: str = ""
+    aliyun_sms_sign_name: str = ""
+    aliyun_sms_template_code: str = ""
+    aliyun_sms_region_id: str = "cn-hangzhou"
+    sms_code_ttl_seconds: int = 300  # 验证码有效期 5 分钟
+    sms_resend_cooldown_seconds: int = 60  # 同一手机号防连点
+    sms_daily_limit: int = 10  # 单手机号每日最多发送次数
+
+    # 登录态 token(服务端存储的随机字符串,不是 JWT,方便主动撤销)
+    auth_token_ttl_days: int = 30
 
     model_config = SettingsConfigDict(
         env_file=_ENV_FILE,

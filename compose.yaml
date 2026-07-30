@@ -18,5 +18,19 @@ services:
       retries: 10
     restart: unless-stopped
 
+  redis:
+    image: redis:7
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - yewne_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
 volumes:
   yewne_postgres_data:
+  yewne_redis_data:

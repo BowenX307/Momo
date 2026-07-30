@@ -16,10 +16,16 @@ import Image from "next/image";
 import {
   fetchAftercare,
   fetchChatDemoStream,
+  fetchMe,
+  fetchLogout,
+  fetchRoundMessages,
+  fetchRounds,
   YewneApiError,
   type ChatDemoRequest,
   type HistoryMessage,
   type Persona,
+  type RoundMessage,
+  type RoundSummary,
   type Scene,
 } from "@/lib/api/yewne";
 import {
@@ -31,15 +37,25 @@ import {
   whenQueueDone,
 } from "@/lib/speech/playYewneSpeech";
 import {
+  clearSession,
   getOrCreateExternalUserId,
   loadSession,
   saveSession,
+  setExternalUserId,
   type ConvTurn,
 } from "@/lib/session/persistSession";
+import {
+  clearAuthToken,
+  getAuthToken,
+  getStoredPhoneNumber,
+  maskPhoneNumber,
+  setAuthToken,
+} from "@/lib/session/authToken";
 import {
   VoiceInputButton,
   type VoicePhase,
 } from "@/app/demo/_components/VoiceInputButton";
+import { LoginPanel } from "@/app/yewne/chat/_components/LoginPanel";
 
 const PERSONA_GREETINGS: Record<Persona, string> = {
   youyou: "来了？直接说吧，我听着。",
@@ -68,7 +84,7 @@ const GRAIN_FINE =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.7'/%3E%3C/svg%3E\")";
 
 // ── 拍立得 Aftercare ──────────────────────────────────────────────
-// "于你给你拍了张照":点相机 → 一张宽幅拍立得摇出。正面 POV 自拍(按情绪变),
+// 点"结束"结束这一轮 → 一张宽幅拍立得摇出,同时这轮对话归档。正面 POV 自拍(按情绪变),
 // 背面手写(金句 + 于你这边同时发生的事 + 署名 + 时间戳)。demo 阶段 hardcode,
 // 情绪档可手动左右切换。TODO(素材):front 图先用现有形象占位,待换成情绪自拍图。
 type Mood = {
@@ -143,6 +159,17 @@ export default function YewneChatPage() {
   const [recordingTrigger, setRecordingTrigger] = useState(0);
   const [conversationActive, setConversationActive] = useState(false);
   const conversationActiveRef = useRef(false);
+  // 往期:历史轮次列表 + 选中的某一轮
+  const [showRounds, setShowRounds] = useState(false);
+  const [rounds, setRounds] = useState<RoundSummary[]>([]);
+  const [roundsLoading, setRoundsLoading] = useState(false);
+  const [roundsError, setRoundsError] = useState<string | null>(null);
+  const [selectedRound, setSelectedRound] = useState<RoundSummary | null>(null);
+  const [selectedMessages, setSelectedMessages] = useState<RoundMessage[] | null>(null);
+  const [selectedLoading, setSelectedLoading] = useState(false);
+  // 登录(手机号 + 验证码)
+  const [showLogin, setShowLogin] = useState(false);
+  const [loggedInPhone, setLoggedInPhone] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const externalUserIdRef = useRef("");
@@ -240,6 +267,19 @@ export default function YewneChatPage() {
       setReply(saved.turns[saved.turns.length - 1].reply);
       /* eslint-enable react-hooks/set-state-in-effect */
     }
+
+    // 恢复登录态:本地存的 token 还有效就显示已登录;失效了静默清掉,回落匿名模式。
+    const token = getAuthToken();
+    if (token) {
+      void fetchMe(token).then((me) => {
+        if (me) {
+          setLoggedInPhone(me.phone_number ?? getStoredPhoneNumber());
+        } else {
+          clearAuthToken();
+        }
+      });
+    }
+
     return () => {
       abortRef.current?.abort();
       stopAudioQueue();
@@ -260,14 +300,22 @@ export default function YewneChatPage() {
     setReplyKey((k) => k + 1);
   }
 
-  // 相机:据真实对话现拍一张——后端判 12 场景(映射情绪档选照片)+ 按人格写回信(印背面)。
-  // 失败静默落 calm,保证永远出片。
-  async function handleTakePolaroid() {
-    if (polaroidLoading) return;
+  // 结束这一轮:据真实对话现拍一张拍立得(后端判 12 场景→情绪档选照片+按人格写回信),
+  // 同时把这轮标记为已结束归档(ended_at/mood/letter 落库,计入 7 轮上限,可在"往期"里回看)。
+  // 失败静默落 calm,保证永远出片;归档失败也不影响拍立得展示和本地重置。
+  async function handleEndRound() {
+    if (polaroidLoading || turns.length === 0) return;
     setPolaroidLoading(true);
     const stampNow = makeStamp();
+    const activeExternalUserId =
+      externalUserIdRef.current || getOrCreateExternalUserId();
     try {
-      const res = await fetchAftercare({ persona, history });
+      const res = await fetchAftercare({
+        persona,
+        history,
+        conversation_id: conversationId,
+        external_user_id: activeExternalUserId,
+      });
       const idx = MOODS.findIndex((m) => m.key === res.mood);
       setMoodIndex(idx >= 0 ? idx : 2); // 找不到落 calm
       setDynamicLetter(res.letter || res.quote); // 旧后端没有 letter 字段时退回 quote
@@ -279,6 +327,82 @@ export default function YewneChatPage() {
       setFlipped(false);
       setPolaroidLoading(false);
       setShowPolaroid(true);
+      // 这轮已经归档,清空本地状态回到打招呼,下一句话会开新的一轮。
+      clearSession(persona);
+      setHistory([]);
+      setTurns([]);
+      setConversationId(null);
+      setScene(null);
+      setPendingUser("");
+      setReply(PERSONA_GREETINGS[persona]);
+      setReplyKey((k) => k + 1);
+    }
+  }
+
+  // 登录成功:存 token;如果后端认的是老账号(external_id 变了),当前这轮匿名聊天
+  // 没法接上老账号的历史(那些历史只能在"往期"里回看),所以清空本地状态重新开始。
+  function handleLoginSuccess(result: {
+    token: string;
+    externalUserId: string;
+    phoneNumber: string;
+    expiresInSeconds: number;
+  }) {
+    setAuthToken(result.token, result.phoneNumber);
+    setLoggedInPhone(result.phoneNumber);
+    setShowLogin(false);
+
+    if (result.externalUserId !== externalUserIdRef.current) {
+      setExternalUserId(result.externalUserId);
+      externalUserIdRef.current = result.externalUserId;
+      clearSession(persona);
+      setHistory([]);
+      setTurns([]);
+      setConversationId(null);
+      setScene(null);
+      setReply(PERSONA_GREETINGS[persona]);
+      setReplyKey((k) => k + 1);
+    }
+  }
+
+  // 退出登录:只结束这次登录态(token 失效),不清匿名身份/聊天记录——
+  // 这个账号的数据还在,只是暂时不带 token 请求了。
+  function handleLogout() {
+    const token = getAuthToken();
+    if (token) void fetchLogout(token);
+    clearAuthToken();
+    setLoggedInPhone(null);
+  }
+
+  // 往期:拉这个匿名用户已结束归档的轮次列表(最新在前)。
+  async function handleOpenRounds() {
+    setShowHistory(false);
+    setShowRounds(true);
+    setSelectedRound(null);
+    setSelectedMessages(null);
+    setRoundsLoading(true);
+    setRoundsError(null);
+    try {
+      const uid = externalUserIdRef.current || getOrCreateExternalUserId();
+      setRounds(await fetchRounds(uid));
+    } catch {
+      setRoundsError("往期加载失败，晚点再试试。");
+    } finally {
+      setRoundsLoading(false);
+    }
+  }
+
+  // 点某一轮:拉这一轮的完整消息(只读回看)。
+  async function handleOpenRound(round: RoundSummary) {
+    setSelectedRound(round);
+    setSelectedMessages(null);
+    setSelectedLoading(true);
+    try {
+      const uid = externalUserIdRef.current || getOrCreateExternalUserId();
+      setSelectedMessages(await fetchRoundMessages(round.conversation_id, uid));
+    } catch {
+      setSelectedMessages([]);
+    } finally {
+      setSelectedLoading(false);
     }
   }
 
@@ -485,22 +609,53 @@ export default function YewneChatPage() {
           </svg>
           回去
         </Link>
-        <div className="flex gap-4">
-          {PERSONAS.map((p) => (
+        <div className="flex items-center gap-5">
+          <div className="flex gap-4">
+            {PERSONAS.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => handlePersonaChange(p)}
+                style={{ filter: "url(#crayon-soft)" }}
+                className={`font-kid text-2xl transition-colors ${
+                  persona === p ? "text-[#d66e76]" : "text-[#504437]/40 hover:text-[#504437]/70"
+                }`}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+          {loggedInPhone ? (
             <button
-              key={p}
               type="button"
-              onClick={() => handlePersonaChange(p)}
+              onClick={handleLogout}
+              aria-label="退出登录"
+              className="font-hand text-sm text-[#504437]/45 transition-colors hover:text-[#d66e76]"
               style={{ filter: "url(#crayon-soft)" }}
-              className={`font-kid text-2xl transition-colors ${
-                persona === p ? "text-[#d66e76]" : "text-[#504437]/40 hover:text-[#504437]/70"
-              }`}
             >
-              {p}
+              {maskPhoneNumber(loggedInPhone)} · 退出
             </button>
-          ))}
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowLogin(true)}
+              aria-label="登录/注册"
+              className="font-hand text-sm text-[#504437]/45 transition-colors hover:text-[#d66e76]"
+              style={{ filter: "url(#crayon-soft)" }}
+            >
+              登录/注册
+            </button>
+          )}
         </div>
       </div>
+
+      {showLogin && (
+        <LoginPanel
+          externalUserId={getOrCreateExternalUserId()}
+          onClose={() => setShowLogin(false)}
+          onSuccess={handleLoginSuccess}
+        />
+      )}
 
       {/* 主体:左小人 / 右回复+输入 */}
       <main className="relative z-10 flex min-h-dvh flex-col md:flex-row">
@@ -573,12 +728,15 @@ export default function YewneChatPage() {
                   </svg>
                 }
               />
-              {/* 录音时铅笔+相机自动收起,只留麦克风(停止)+发送键,避免挤成四个 */}
+              {/* 录音时铅笔+结束按钮自动收起,只留麦克风(停止)+发送键,避免挤成四个 */}
               {voicePhase !== "recording" && (
                 <>
                   <button
                     type="button"
-                    onClick={() => setShowHistory(true)}
+                    onClick={() => {
+                      setShowRounds(false);
+                      setShowHistory(true);
+                    }}
                     aria-label="查看聊过的话"
                     className="flex h-9 w-9 shrink-0 items-center justify-center text-[#504437]/70 transition-colors hover:text-[#d66e76]"
                   >
@@ -589,19 +747,31 @@ export default function YewneChatPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={handleTakePolaroid}
-                    disabled={polaroidLoading}
-                    aria-label="于你给你拍张照"
-                    className="flex h-9 w-9 shrink-0 items-center justify-center text-[#504437]/70 transition-colors hover:text-[#d66e76] disabled:opacity-60"
+                    onClick={() => void handleOpenRounds()}
+                    aria-label="往期"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center text-[#504437]/70 transition-colors hover:text-[#d66e76]"
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <circle cx="12" cy="13" r="8" />
+                      <path d="M12 9v4l2.5 1.5" />
+                      <path d="M9 2.5h6" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleEndRound}
+                    disabled={polaroidLoading || turns.length === 0}
+                    aria-label="结束这一轮"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center text-[#504437]/70 transition-colors hover:text-[#d66e76] disabled:opacity-40"
                   >
                     {polaroidLoading ? (
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" className="animate-spin" aria-hidden>
                         <path d="M21 12a9 9 0 1 1-6.2-8.5" />
                       </svg>
                     ) : (
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                        <path d="M4 8.5h3l1.4-2h7.2L17 8.5h3a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1Z" />
-                        <circle cx="12" cy="13" r="3.2" />
+                      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                        <circle cx="12" cy="12" r="9" />
+                        <path d="M8.5 12.3l2.3 2.3 4.7-4.7" />
                       </svg>
                     )}
                   </button>
@@ -732,7 +902,112 @@ export default function YewneChatPage() {
         </div>
       )}
 
-      {/* 拍立得 aftercare:相机点开,POV 自拍 + 翻面手写话,情绪档可左右切 */}
+      {/* 往期:已结束归档的历史轮次,列表 + 只读回看 */}
+      {showRounds && (
+        <div className="fixed inset-0 z-40">
+          <div className="absolute inset-0 bg-[#f0e7d6]" />
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{ backgroundImage: GRAIN, backgroundSize: "200px 200px", opacity: 0.5, mixBlendMode: "multiply" }}
+          />
+
+          <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-6 py-5 sm:px-10">
+            {selectedRound ? (
+              <button
+                type="button"
+                onClick={() => setSelectedRound(null)}
+                className="inline-flex items-center gap-1.5 font-hand text-lg text-[#504437]/55 transition-colors hover:text-[#504437]"
+                style={{ filter: "url(#crayon-soft)" }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M14 6l-6 6 6 6" />
+                </svg>
+                往期
+              </button>
+            ) : (
+              <span className="font-hand text-lg text-[#504437]/55">往期</span>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowRounds(false)}
+              aria-label="关闭"
+              className="flex h-9 w-9 items-center justify-center text-[#504437]/60 transition-colors hover:text-[#504437]"
+              style={{ filter: "url(#crayon-soft)" }}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+                <line x1="6" y1="6" x2="18" y2="18" />
+                <line x1="18" y1="6" x2="6" y2="18" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="absolute inset-0 overflow-y-auto px-6 pb-10 pt-20">
+            <div className="mx-auto max-w-2xl">
+              {!selectedRound ? (
+                roundsLoading ? (
+                  <p className="font-hand text-lg text-[#504437]/45">加载中…</p>
+                ) : roundsError ? (
+                  <p className="font-hand text-lg text-[#504437]/45">{roundsError}</p>
+                ) : rounds.length === 0 ? (
+                  <p className="font-hand text-lg text-[#504437]/45">还没有结束归档的轮次，聊完点&ldquo;结束&rdquo;就会存一轮。</p>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {rounds.map((r) => (
+                      <button
+                        key={r.conversation_id}
+                        type="button"
+                        onClick={() => void handleOpenRound(r)}
+                        className="rounded-2xl border border-[#e3d8c2] bg-[#faf6ec] px-4 py-3 text-left transition-colors hover:border-[#d66e76]/50"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="font-hand text-base text-[#504437]">
+                            {new Date(r.ended_at).toLocaleString()}
+                          </span>
+                          <span className="font-kid shrink-0 text-sm text-[#504437]/50">
+                            {PERSONA_SIGN[r.persona]}
+                          </span>
+                        </div>
+                        {r.letter && (
+                          <p className="mt-1 truncate font-hand text-sm text-[#504437]/60">{r.letter}</p>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )
+              ) : selectedLoading ? (
+                <p className="font-hand text-lg text-[#504437]/45">加载中…</p>
+              ) : (
+                <div className="flex flex-col gap-7 pb-10">
+                  {selectedRound.letter && (
+                    <div className="rounded-2xl border border-[#e3d8c2] bg-[#faf6ec] px-5 py-4">
+                      <p className="whitespace-pre-line font-hand text-base leading-relaxed text-[#504437]">
+                        {selectedRound.letter}
+                      </p>
+                    </div>
+                  )}
+                  {(selectedMessages ?? []).map((m, i) =>
+                    m.role === "user" ? (
+                      <div key={i} className="flex justify-end">
+                        <span className="max-w-[80%] rounded-2xl rounded-br-md bg-[#e7dcc6] px-4 py-2.5 font-hand text-[17px] leading-relaxed text-[#504437]">
+                          {m.content}
+                        </span>
+                      </div>
+                    ) : (
+                      <div key={i} className="flex justify-start">
+                        <span className="max-w-[85%] rounded-2xl rounded-bl-md bg-[#faf6ec] px-4 py-2.5 font-hand text-[17px] leading-relaxed text-[#504437] shadow-[0_6px_20px_rgba(120,100,70,0.08)]">
+                          {m.content}
+                        </span>
+                      </div>
+                    ),
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 拍立得 aftercare:点"结束"弹出,POV 自拍 + 翻面手写话,这轮已经归档 */}
       {showPolaroid && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-6">
           {/* 压暗背景,点击收起 */}
@@ -796,7 +1071,7 @@ export default function YewneChatPage() {
               </div>
             </div>
 
-            {/* 相机据对话自动选匹配那张,不再手动翻页 */}
+            {/* 据这轮对话自动选匹配那张,不再手动翻页 */}
             <p className="pol-in mt-6 text-center font-hand text-sm text-[#f0e7d6]/55" style={{ animationDelay: "120ms" }}>
               点卡片翻面 · 点空白处收起
             </p>

@@ -5,6 +5,7 @@
 """
 
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -21,6 +22,16 @@ class AftercareRequest(BaseModel):
         default_factory=list,
         max_length=20,
         description="最近对话历史（最多 20 条），据此判情绪 + 写金句",
+    )
+    conversation_id: UUID | None = Field(
+        default=None,
+        description="要结束归档的会话 ID；连同 external_user_id 一起传才会落库 ended_at/mood/letter",
+    )
+    external_user_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        description="配合 conversation_id 做归属校验，防止归档到别人的会话",
     )
 
 
