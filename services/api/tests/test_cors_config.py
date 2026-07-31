@@ -5,6 +5,8 @@
 后的行为，防止以后有人为了「本地调试方便」把 "*" 改回来。
 """
 
+import pytest
+
 from app.core.config import Settings
 from app.main import app
 
@@ -25,10 +27,36 @@ def test_cors_defaults_cover_production_and_local_dev() -> None:
 
 
 def test_cors_origins_accepts_comma_separated_env_value() -> None:
-    """.env 里用逗号分隔而非 JSON 数组也要能解析，并去掉空格。"""
+    """.env 里用逗号分隔而非 JSON 数组也要能解析，并去掉空格。
+
+    ⚠️ 这条走的是 init 参数，不经过环境变量源；真正的 env 路径见下面两条——
+    2026-07-31 之前只有这一条，结果 env 路径其实是坏的却一直绿着。
+    """
     settings = Settings(cors_origins="https://a.cn, https://b.cn")
 
     assert settings.cors_origins == ["https://a.cn", "https://b.cn"]
+
+
+def test_cors_origins_comma_separated_from_real_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[2026-07-31] 从真实环境变量读逗号分隔值。
+
+    没有 NoDecode 时，pydantic-settings 会先对 list 字段做 json.loads，在 mode="before"
+    校验器之前就抛 SettingsError，服务起不来——照 config.py 注释配 .env 就是生产事故。
+    """
+    monkeypatch.setenv("CORS_ORIGINS", "https://a.cn, https://b.cn")
+
+    assert Settings().cors_origins == ["https://a.cn", "https://b.cn"]
+
+
+def test_cors_origins_json_array_from_real_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """JSON 数组写法要继续可用——已经按这个格式配好的 .env 不能被这次修复弄坏。"""
+    monkeypatch.setenv("CORS_ORIGINS", '["https://a.cn", "https://b.cn"]')
+
+    assert Settings().cors_origins == ["https://a.cn", "https://b.cn"]
 
 
 def test_cors_middleware_does_not_allow_credentials() -> None:
