@@ -398,6 +398,9 @@ export interface VerifyCodeResponse {
 export interface MeResponse {
   external_user_id: string;
   phone_number?: string | null;
+  /** 有没有设过密码；前端据此显示「设置密码」还是「修改密码」。 */
+  has_password?: boolean;
+  consent_version?: string | null;
 }
 
 export interface AuthApiErrorBody {
@@ -405,55 +408,141 @@ export interface AuthApiErrorBody {
   message: string;
 }
 
+/** 验证码用途。为登录发的码不能拿去重置密码，后端按用途分开存。 */
+export type CodePurpose = "login" | "reset";
+
+type AuthRequestOptions = { signal?: AbortSignal; baseUrl?: string };
+
+/** /v1/auth/* 的公共调用：POST JSON，非 2xx 抛 YewneApiError(body 为 {code, message})。 */
+async function postAuth<T>(
+  path: string,
+  payload: Record<string, unknown>,
+  options: AuthRequestOptions & { token?: string } = {},
+): Promise<T> {
+  const base = options.baseUrl ?? API_BASE;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (options.token) headers.Authorization = `Bearer ${options.token}`;
+
+  const res = await fetch(`${base}/v1/auth/${path}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload),
+    signal: options.signal,
+  });
+
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    // 204 之类没有响应体的情况走这里，不算错。
+    body = undefined;
+  }
+  if (!res.ok) throw new YewneApiError(`HTTP ${res.status}`, res.status, unwrapDetail(body));
+  return body as T;
+}
+
+/** FastAPI 把错误包在 detail 里：{"detail": {"code","message"}}。
+ * 调用方只关心 {code, message}，在这里拆掉，省得每个 errorMessage() 都写 body.detail.code。
+ * 422 的 detail 是数组（pydantic 校验错误），那种保持原样交给兜底文案。 */
+function unwrapDetail(body: unknown): unknown {
+  if (body && typeof body === "object" && "detail" in body) {
+    const detail = (body as { detail: unknown }).detail;
+    if (detail && typeof detail === "object" && !Array.isArray(detail)) return detail;
+  }
+  return body;
+}
+
 /** 调 /v1/auth/send-code。失败时 err.body 是 {code, message}，code 取值：
  * cooldown(发送太频繁) / daily_limit(今日上限) / sms_failed(短信服务出错)。 */
 export async function fetchSendCode(
   phoneNumber: string,
-  options: { signal?: AbortSignal; baseUrl?: string } = {},
+  options: AuthRequestOptions & { purpose?: CodePurpose } = {},
 ): Promise<SendCodeResponse> {
-  const base = options.baseUrl ?? API_BASE;
-  const res = await fetch(`${base}/v1/auth/send-code`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phone_number: phoneNumber }),
-    signal: options.signal,
-  });
-  let body: unknown;
-  try {
-    body = await res.json();
-  } catch {
-    body = undefined;
-  }
-  if (!res.ok) throw new YewneApiError(`HTTP ${res.status}`, res.status, body);
-  return body as SendCodeResponse;
+  return postAuth<SendCodeResponse>(
+    "send-code",
+    { phone_number: phoneNumber, purpose: options.purpose ?? "login" },
+    options,
+  );
 }
 
-/** 调 /v1/auth/verify-code。失败时 err.body 是 {code, message}，code 取值：invalid_code。 */
+/** 调 /v1/auth/verify-code。失败时 err.body 的 code 取值：
+ * invalid_code / terms_required。 */
 export async function fetchVerifyCode(
   phoneNumber: string,
   code: string,
   externalUserId: string,
-  options: { signal?: AbortSignal; baseUrl?: string } = {},
+  agreedToTerms: boolean,
+  options: AuthRequestOptions = {},
 ): Promise<VerifyCodeResponse> {
-  const base = options.baseUrl ?? API_BASE;
-  const res = await fetch(`${base}/v1/auth/verify-code`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  return postAuth<VerifyCodeResponse>(
+    "verify-code",
+    {
       phone_number: phoneNumber,
       code,
       external_user_id: externalUserId,
-    }),
-    signal: options.signal,
-  });
-  let body: unknown;
-  try {
-    body = await res.json();
-  } catch {
-    body = undefined;
-  }
-  if (!res.ok) throw new YewneApiError(`HTTP ${res.status}`, res.status, body);
-  return body as VerifyCodeResponse;
+      agreed_to_terms: agreedToTerms,
+    },
+    options,
+  );
+}
+
+/** 调 /v1/auth/login-password。失败时 err.body 的 code 取值：
+ * invalid_credentials(手机号或密码不对——注意后端故意不区分"没注册"和"密码错")
+ * / too_many_attempts(失败次数过多被锁) / terms_required。 */
+export async function fetchLoginPassword(
+  phoneNumber: string,
+  password: string,
+  externalUserId: string,
+  agreedToTerms: boolean,
+  options: AuthRequestOptions = {},
+): Promise<VerifyCodeResponse> {
+  return postAuth<VerifyCodeResponse>(
+    "login-password",
+    {
+      phone_number: phoneNumber,
+      password,
+      external_user_id: externalUserId,
+      agreed_to_terms: agreedToTerms,
+    },
+    options,
+  );
+}
+
+/** 调 /v1/auth/set-password（需登录态）。首次设置 currentPassword 传 null。
+ * 失败时 err.body 的 code 取值：invalid_credentials(旧密码不对) / unauthorized。 */
+export async function fetchSetPassword(
+  token: string,
+  currentPassword: string | null,
+  newPassword: string,
+  options: AuthRequestOptions = {},
+): Promise<void> {
+  await postAuth<void>(
+    "set-password",
+    { current_password: currentPassword, new_password: newPassword },
+    { ...options, token },
+  );
+}
+
+/** 调 /v1/auth/reset-password。重置成功后直接返回 token（顺手登录，省一步）。 */
+export async function fetchResetPassword(
+  phoneNumber: string,
+  code: string,
+  newPassword: string,
+  externalUserId: string,
+  agreedToTerms: boolean,
+  options: AuthRequestOptions = {},
+): Promise<VerifyCodeResponse> {
+  return postAuth<VerifyCodeResponse>(
+    "reset-password",
+    {
+      phone_number: phoneNumber,
+      code,
+      new_password: newPassword,
+      external_user_id: externalUserId,
+      agreed_to_terms: agreedToTerms,
+    },
+    options,
+  );
 }
 
 /** 调 /v1/auth/logout。 */
