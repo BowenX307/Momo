@@ -16,15 +16,19 @@ token 无效/过期按「没带」处理而不是 401：过期只意味着回到
 from typing import Annotated
 
 import structlog
-from fastapi import Depends, Header
+from fastapi import Depends, Header, HTTPException, Request
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.domain.auth import service as auth_service
 from app.infra.database import get_db_session
+from app.infra.rate_limit import allow
 from app.infra.redis_client import get_redis
 
 logger = structlog.get_logger(__name__)
+
+_WINDOW_SECONDS = 60
 
 
 async def optional_authenticated_user_id(
@@ -73,3 +77,57 @@ def resolve_owner_id(verified_user_id: str | None, claimed_user_id: str) -> str:
 
 
 OptionalAuthUserId = Annotated[str | None, Depends(optional_authenticated_user_id)]
+
+
+def client_ip(request: Request) -> str:
+    """取调用方 IP。
+
+    线上是 nginx 转发,`request.client.host` 拿到的是 nginx 自己的地址,真实 IP 在
+    X-Forwarded-For 里。取**最后一段**而不是第一段:客户端可以伪造整个 XFF 头,nginx
+    是把真实来源追加在末尾的,所以末尾那个才是可信的。
+
+    nginx 若没有配置转发这个头,这里会退回 nginx 的 IP,于是所有用户共用一个桶——
+    IP 那层额度因此取了很大的倍数(见 settings.rate_limit_ip_multiplier 的注释)。
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+        if parts:
+            return parts[-1]
+    return request.client.host if request.client else "unknown"
+
+
+async def enforce_rate_limit(
+    request: Request,
+    redis: Redis,
+    *,
+    bucket: str,
+    limit: int,
+    identity: str | None,
+) -> None:
+    """超额时抛 429。身份桶 + IP 桶各查一次,任一超额即拒绝。
+
+    两层是因为 external_user_id 由客户端生成,换一个就能绕过身份桶;IP 桶用来兜住这种
+    轮换。反过来 IP 桶单独也不够(同一 WiFi 下多个真实用户共享出口 IP),所以两层并存、
+    IP 那层额度放大。
+    """
+    if not settings.rate_limit_enabled:
+        return
+
+    buckets = [(f"ratelimit:{bucket}:ip:{client_ip(request)}",
+                limit * settings.rate_limit_ip_multiplier)]
+    if identity:
+        buckets.append((f"ratelimit:{bucket}:id:{identity}", limit))
+
+    for key, key_limit in buckets:
+        if not await allow(
+            redis, key=key, limit=key_limit, window_seconds=_WINDOW_SECONDS
+        ):
+            logger.info("rate_limited", bucket=bucket, key=key, limit=key_limit)
+            raise HTTPException(
+                status_code=429,
+                detail={"code": "rate_limited", "message": "请求过于频繁，稍后再试"},
+            )
+
+
+RedisDep = Annotated[Redis, Depends(get_redis)]

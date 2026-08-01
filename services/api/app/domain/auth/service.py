@@ -21,6 +21,8 @@ _CODE_KEY = "verify_code:{phone}"
 _COOLDOWN_KEY = "verify_code_sent:{phone}"
 _DAILY_KEY = "verify_code_daily:{phone}:{day}"
 _TOKEN_KEY = "auth_token:{token}"
+# [2026-08-01] 同一个验证码已经猜错几次，超过上限即作废。
+_ATTEMPTS_KEY = "verify_code_attempts:{phone}"
 
 
 class AuthError(Exception):
@@ -82,10 +84,30 @@ async def verify_code(
 
     返回 (token, 登录后应使用的 external_user_id, token 有效期秒数)。
     """
-    stored = await redis.get(_CODE_KEY.format(phone=phone_number))
+    code_key = _CODE_KEY.format(phone=phone_number)
+    attempts_key = _ATTEMPTS_KEY.format(phone=phone_number)
+
+    stored = await redis.get(code_key)
     if not stored or stored != code:
+        # [2026-08-01] 原先猜错什么都不做：验证码是 6 位数字(100 万种)、有效期 5 分钟、
+        # 这个接口又没有任何限流，等于可以无限次穷举。攻击者可以给别人的手机号发码再暴力
+        # 破解，猜中即拿到合法 token，也就拿到那个人的全部对话记录。
+        # 现在错够 verify_code_max_attempts 次就把验证码本身作废，逼他重新发送——而发送
+        # 侧本来就有每日上限，于是每天的尝试次数从"无限"压到 10 × max_attempts。
+        attempts = int(await redis.incr(attempts_key))
+        if attempts == 1:
+            # 跟验证码同寿命，验证码过期了计数也没有保留的意义。
+            await redis.expire(attempts_key, settings.sms_code_ttl_seconds)
+
+        if attempts >= settings.verify_code_max_attempts:
+            await redis.delete(code_key)
+            await redis.delete(attempts_key)
+            raise AuthError("too_many_attempts", "错误次数过多，请重新获取验证码")
+
         raise AuthError("invalid_code", "验证码不对或已过期")
-    await redis.delete(_CODE_KEY.format(phone=phone_number))
+
+    await redis.delete(code_key)
+    await redis.delete(attempts_key)
 
     users = UserRepository(session)
     existing = await users.get_by_phone_number(phone_number)

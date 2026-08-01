@@ -6,9 +6,10 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import RedisDep, enforce_rate_limit
 from app.core.config import settings
 from app.domain.aftercare.schemas import AftercareRequest, AftercareResponse
 from app.domain.aftercare.service import archive_round, generate_aftercare
@@ -22,7 +23,16 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
 async def aftercare_generate(
     request: AftercareRequest,
     session: DatabaseSession,
+    http_request: Request,
+    redis: RedisDep,
 ) -> AftercareResponse:
+    await enforce_rate_limit(
+        http_request,
+        redis,
+        bucket="aftercare",
+        limit=settings.rate_limit_aftercare_per_minute,
+        identity=request.external_user_id,
+    )
     result = await generate_aftercare(request)
     if settings.persistence_enabled and request.conversation_id and request.external_user_id:
         await archive_round(
