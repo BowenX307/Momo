@@ -65,6 +65,58 @@ const PERSONA_GREETINGS: Record<Persona, string> = {
 
 const PERSONAS: Persona[] = ["youyou", "nini"];
 
+/**
+ * 输入栏那四个按钮的说明，供顶栏「按钮说明」展开使用。
+ *
+ * 图标与实际按钮上用的是同一份 path，改按钮图标时这里要一起改，否则说明和界面对不上。
+ * 「结束这一轮」特意写明会存下来：那个按钮除了出拍立得还会把整轮对话归档，
+ * 而界面上原本没有任何提示。
+ */
+const BUTTON_GUIDE: { label: string; desc: string; icon: React.ReactNode }[] = [
+  {
+    label: "说话",
+    desc: "按住说，松开自动转成文字发出去",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <rect x="9" y="3" width="6" height="11" rx="3" />
+        <path d="M5 11a7 7 0 0 0 14 0" />
+        <line x1="12" y1="18" x2="12" y2="21.5" />
+      </svg>
+    ),
+  },
+  {
+    label: "聊过的话",
+    desc: "翻看这一轮里已经说过的内容",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
+      </svg>
+    ),
+  },
+  {
+    label: "往期",
+    desc: "看以前结束过的那些轮次",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <circle cx="12" cy="13" r="8" />
+        <path d="M12 9v4l2.5 1.5" />
+        <path d="M9 2.5h6" />
+      </svg>
+    ),
+  },
+  {
+    label: "结束这一轮",
+    desc: "出一张拍立得，这轮对话会存下来，之后能在「往期」里看到",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M8.5 12.3l2.3 2.3 4.7-4.7" />
+      </svg>
+    ),
+  },
+];
+
 // 小人三态对应的图。thinking / writing 待换成真实姿势(思考 / 趴着写字)。
 type CharState = "idle" | "thinking" | "writing";
 const CHAR_IMG: Record<CharState, string> = {
@@ -146,6 +198,7 @@ export default function YewneChatPage() {
   const [voicePhase, setVoicePhase] = useState<VoicePhase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showButtonGuide, setShowButtonGuide] = useState(false);
   const [pendingUser, setPendingUser] = useState("");
   // 拍立得 aftercare
   const [showPolaroid, setShowPolaroid] = useState(false);
@@ -633,6 +686,38 @@ export default function YewneChatPage() {
               </button>
             ))}
           </div>
+          {/* 输入栏那四个按钮全是纯图标,没有文字也没有 title,新用户看不出各自干什么。
+              放在这里而不是人格切换左边:和「登录/注册」同为 text-sm 的小字,挨在一起
+              比被夹在「回去」和 text-2xl 的人格名之间整齐。 */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowButtonGuide((v) => !v)}
+              aria-expanded={showButtonGuide}
+              className="font-hand text-sm text-[#504437]/45 transition-colors hover:text-[#d66e76]"
+              style={{ filter: "url(#crayon-soft)" }}
+            >
+              按钮说明
+            </button>
+            {showButtonGuide && (
+              <div className="absolute right-0 top-8 z-30 w-64 rounded-2xl border border-[#e3d8c2] bg-[#faf6ec] p-4 shadow-lg">
+                <ul className="flex flex-col gap-3">
+                  {BUTTON_GUIDE.map((item) => (
+                    <li key={item.label} className="flex items-start gap-2.5">
+                      <span className="mt-0.5 shrink-0 text-[#504437]/70">
+                        {item.icon}
+                      </span>
+                      <span className="font-hand text-sm leading-snug text-[#504437]/75">
+                        <span className="text-[#504437]">{item.label}</span>
+                        <br />
+                        {item.desc}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
           {loggedInPhone ? (
             <div
               className="flex items-center gap-2 font-hand text-sm text-[#504437]/45"
@@ -822,6 +907,19 @@ export default function YewneChatPage() {
                 rows={1}
                 className="font-hand flex-1 resize-none bg-transparent px-2 py-1.5 text-lg leading-relaxed text-[#504437] outline-none placeholder:text-[#504437]/35"
               />
+              {/* 主界面原先只有输入框没有发送键,只能靠 Enter——手机上没有物理 Enter,
+                  等于打完字发不出去。样式与"聊过的话"那层的发送键保持一致。 */}
+              <button
+                type="button"
+                onClick={() => void handleSend()}
+                disabled={!input.trim() && !loading && !speaking}
+                aria-label={loading || speaking ? "打断" : "发送"}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#d66e76] text-white transition-colors hover:bg-[#c2555e] disabled:cursor-not-allowed disabled:bg-[#d8ccb8]"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5c-1.3 0-2.5-.3-3.6-.8L3 21l1.8-5.9c-.5-1.1-.8-2.3-.8-3.6a8.5 8.5 0 0 1 17 0Z" />
+                </svg>
+              </button>
               </div>
             </div>
             {error && <p className="mt-2 font-hand text-sm text-[#c2555e]">{error}</p>}
