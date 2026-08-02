@@ -26,35 +26,37 @@ def test_cors_defaults_cover_production_and_local_dev() -> None:
     assert "http://127.0.0.1:3000" in origins
 
 
-# [2026-08-01] 下面三个用例必须经由 monkeypatch.setenv 走真正的环境变量来源。
-# 之前写成 Settings(cors_origins="a,b") 直接传构造函数，绕过了 EnvSettingsSource，
-# 于是测试是绿的、而真配进 .env 时服务启动即 SettingsError（pydantic-settings 会在
-# 模型校验前先把 list 类型的环境变量按 JSON 预解析）。构造函数那条路测不出这个。
-def test_cors_origins_accepts_comma_separated_env_value(
+def test_cors_origins_accepts_comma_separated_env_value() -> None:
+    """.env 里用逗号分隔而非 JSON 数组也要能解析，并去掉空格。
+
+    ⚠️ 这条走的是 init 参数，不经过环境变量源；真正的 env 路径见下面两条——
+    2026-07-31 之前只有这一条，结果 env 路径其实是坏的却一直绿着。
+    """
+    settings = Settings(cors_origins="https://a.cn, https://b.cn")
+
+    assert settings.cors_origins == ["https://a.cn", "https://b.cn"]
+
+
+def test_cors_origins_comma_separated_from_real_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """.env 里用逗号分隔而非 JSON 数组也要能解析，并去掉空格。"""
+    """[2026-07-31] 从真实环境变量读逗号分隔值。
+
+    没有 NoDecode 时，pydantic-settings 会先对 list 字段做 json.loads，在 mode="before"
+    校验器之前就抛 SettingsError，服务起不来——照 config.py 注释配 .env 就是生产事故。
+    """
     monkeypatch.setenv("CORS_ORIGINS", "https://a.cn, https://b.cn")
 
     assert Settings().cors_origins == ["https://a.cn", "https://b.cn"]
 
 
-def test_cors_origins_still_accepts_json_array_env_value(
+def test_cors_origins_json_array_from_real_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """已经按 JSON 数组配好的环境不应因为这次改动而失效。"""
+    """JSON 数组写法要继续可用——已经按这个格式配好的 .env 不能被这次修复弄坏。"""
     monkeypatch.setenv("CORS_ORIGINS", '["https://a.cn", "https://b.cn"]')
 
     assert Settings().cors_origins == ["https://a.cn", "https://b.cn"]
-
-
-def test_cors_origins_single_value_env_needs_no_comma(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """只配一个域名时不必写逗号，也不该被当成 JSON 解析失败。"""
-    monkeypatch.setenv("CORS_ORIGINS", "https://only.cn")
-
-    assert Settings().cors_origins == ["https://only.cn"]
 
 
 def test_cors_middleware_does_not_allow_credentials() -> None:

@@ -1,7 +1,8 @@
 # 于你 Yewne · Unity 场景端接入说明书
 
-> 版本 2026-07-16 · 后端已上线,可直接联调
-> ⚠️ 本版起项目由 uni 更名为**于你 Yewne**,人格 key 由 `iris`/`rocky` 改为 `youyou`(优优)/`nini`(妮妮),`momo` 已移除;脚本类名 `UniClient`/`UniState` 相应改为 `YewneClient`/`YewneState`。从旧版升级时请整体替换脚本并更新 persona 取值。
+> 版本 2026-07-22 · 后端已上线,可直接联调
+> ⚠️ 项目由 uni 更名为**于你 Yewne**,人格 key 由 `iris`/`rocky` 改为 `youyou`(优优)/`nini`(妮妮),`momo` 已移除;脚本类名 `UniClient`/`UniState` 相应改为 `YewneClient`/`YewneState`。从旧版升级时请整体替换脚本并更新 persona 取值。
+> 🆕 2026-07-22 新增拍立得接口 `TakeAftercare()`(见[第八节](#八拍立得相机按钮点这个)),和聊天接口相互独立,直接更新 `YewneClient.cs` 即可,不用改已有代码。
 > 本说明书配套文件:`YewneClient.cs`(接入用的客户端脚本)、`YewneWebGL.jslib`(仅 WebGL 构建需要)
 
 ---
@@ -15,10 +16,11 @@
 5. [三个状态:待机 / 思考 / 说话](#五三个状态待机--思考--说话)
 6. [小人反应动画:后端直接告诉你演哪个](#六小人反应动画后端直接告诉你演哪个)
 7. [播放语音:base64 → AudioClip](#七播放语音base64--audioclip)
-8. [人格](#八人格)
-9. [接口自测](#九接口自测)
-10. [注意事项](#十注意事项)
-11. [联系方式](#十一联系方式)
+8. [拍立得:相机按钮点这个](#八拍立得相机按钮点这个)
+9. [人格](#九人格)
+10. [接口自测](#十接口自测)
+11. [注意事项](#十一注意事项)
+12. [联系方式](#十二联系方式)
 
 ---
 
@@ -26,7 +28,7 @@
 
 于你 Yewne 是一个情绪陪伴 AI。用户对小人说话,后端会:**理解这句话 → 生成回答 → 合成语音 → 判断用户情绪 → 决定小人该做什么反应**,然后把结果一次性交给你,由 Unity 里的小人"说"出来、"演"出来。
 
-**你只需要对接一个接口。** 一次请求,同时拿到「回答文字」「回答语音」「用户情绪」「小人反应动画」。
+**核心是两个接口。** 聊天:一次请求同时拿到「回答文字」「回答语音」「用户情绪」「小人反应动画」;拍立得:相机按钮点击时,读当前对话现写一段回信 + 决定用哪张自拍(见[第八节](#八拍立得相机按钮点这个))。
 
 配套的 `YewneClient.cs` 已经把调接口、拆数据、播语音、切状态全部封装好,你基本不用碰网络代码。
 
@@ -271,7 +273,76 @@ WebGL 上音频走浏览器的 Web Audio,和其他平台有三点不同(`YewneCl
 
 ---
 
-## 八、人格
+## 八、拍立得:相机按钮点这个
+
+这是和聊天接口**完全独立**的第二个接口。用户点相机按钮时调用,后端读当前这段对话,判断一个情绪档、并按当前人格口吻现写一段回信,印在拍立得背面;情绪档同时决定正面用哪张 POV 自拍。
+
+`YewneClient.cs` 已封装成 `TakeAftercare()`,不占用 `Say()` 的三个状态(`Idle`/`Thinking`/`Speaking`),可以随时调用,包括对话进行中。
+
+### 接入示例
+
+```csharp
+yewneClient.OnAftercare += res =>
+{
+    ShowPolaroid(photo: PhotoFor(res.mood), backText: res.letter);
+};
+
+// 用户点相机
+yewneClient.TakeAftercare();
+```
+
+### 接口
+
+| | |
+|---|---|
+| 线上 | `POST https://uniai.net.cn/v1/aftercare/generate` |
+| 本地联调 | `POST http://127.0.0.1:8000/v1/aftercare/generate` |
+| Content-Type | `application/json` |
+| 耗时 | 约 1~2 秒(纯文本,无语音合成) |
+
+**请求体**(`TakeAftercare()` 已用当前 `persona` + 内部维护的 `history` 自动拼好):
+
+```json
+{
+  "persona": "nini",
+  "history": [
+    { "role": "user", "content": "今天真的很累，感觉什么都做不好" },
+    { "role": "assistant", "content": "你已经很尽力了，先别急着怪自己。" }
+  ]
+}
+```
+
+`history` 为空(用户还没聊过就点了相机)也能调,后端会落 `calm` 兜底,不会报错。
+
+**响应体**:
+
+```json
+{
+  "mood": "down",
+  "quote": "……(已废弃字段，内容与 letter 相同，忽略即可)",
+  "letter": "你刚才说的那句'什么都做不好'，我听见了，但我不这么看。我看到的只是一个累到快撑不住、却还在努力的人。先歇一歇吧，不用急着证明什么。",
+  "scene": "self_doubt",
+  "is_mock": false
+}
+```
+
+| 字段 | 用来干嘛 |
+|---|---|
+| `mood` | `down` / `anxious` / `calm` 三选一,**决定正面用哪张 POV 自拍**(具体哪张对应哪个情绪档,由美术那边定,问后端要映射表) |
+| `letter` | 回信正文,≤100 字,直接印在拍立得背面,可能含 `\n` 分段 |
+| `quote` | 已废弃,内容和 `letter` 完全一样,忽略即可(留着只是兼容旧前端) |
+| `scene` | 判定出的场景键,调试用,不用展示给用户 |
+| `is_mock` | `true` = 没配 key 或降级,走的是兜底文案,不是模型现写 |
+
+### 与聊天接口的关系
+
+- **完全独立**:不影响、不依赖 `Say()` 的 `Idle`/`Thinking`/`Speaking` 状态,拍立得没有语音,只有文字。
+- **共用同一份 `history`**:`TakeAftercare()` 内部直接读 `YewneClient` 维护的对话历史,不用你额外传。所以要先聊几句,拍立得写出来的信才有内容可扣;完全没聊过也能点,只是会落 `calm` 兜底。
+- **不会清空历史**:点完相机之后聊天可以继续,`history` 不受影响。
+
+---
+
+## 九、人格
 
 在 `YewneClient` 组件的 Inspector 面板改 `persona` 字段。两个人格的**措辞风格与语音音色都不同**:
 
@@ -284,7 +355,7 @@ WebGL 上音频走浏览器的 Web Audio,和其他平台有三点不同(`YewneCl
 
 ---
 
-## 九、接口自测
+## 十、接口自测
 
 接入前想独立验证服务端,执行:
 
@@ -296,11 +367,21 @@ curl -X POST https://uniai.net.cn/v1/chat/demo \
 
 正常会返回一段 JSON,含 `reply`(文本)、`emotion`(用户情绪)、`reaction`(小人反应)、`audio_base64`(语音)。`audio_base64` 很长属正常。
 
+拍立得接口同理:
+
+```bash
+curl -X POST https://uniai.net.cn/v1/aftercare/generate \
+  -H "Content-Type: application/json" \
+  -d '{"persona":"nini","history":[{"role":"user","content":"今天真的很累"}]}'
+```
+
+正常会返回含 `mood`、`letter` 的 JSON(见[第八节](#八拍立得相机按钮点这个))。
+
 服务是否在线:浏览器打开 `https://uniai.net.cn/health`,看到 `"status": "healthy"` 即正常。
 
 ---
 
-## 十、注意事项
+## 十一、注意事项
 
 - **响应耗时约 2~4 秒**(含语音合成)。这期间小人处于 `Thinking`,请确保思考动画能自然循环。
 - **请求进行中重复调用 `Say()` 会被忽略**,以避免语音叠音。需要"打断"能力请找后端沟通。
@@ -310,7 +391,7 @@ curl -X POST https://uniai.net.cn/v1/chat/demo \
 
 ---
 
-## 十一、联系方式
+## 十二、联系方式
 
 接口行为、字段含义、放开某人格的反应取值、新增返回值等,请联系后端负责人 Bowen。
 不必自己猜;尤其**不要为了拿状态或反应去写轮询**——它们都已经在返回里给你了。

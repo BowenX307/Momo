@@ -1,6 +1,5 @@
 """应用配置 - 通过环境变量加载"""
 
-import json
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -29,10 +28,9 @@ class Settings(BaseSettings):
     # 不要改这里的默认值——默认值只作为没配 .env 时的兜底。带协议头,不要写路径,例如:
     #   CORS_ORIGINS=https://uniai.net.cn,https://staging.uniai.net.cn
     #
-    # NoDecode 是必需的,不是可选优化:pydantic-settings 对 list 这类复杂类型,会在进入
-    # 模型校验**之前**先把环境变量值按 JSON 解析。逗号分隔不是合法 JSON,于是下面的
-    # field_validator 还没轮到运行就已经抛 SettingsError,服务直接起不来。NoDecode 关掉
-    # 那一步预解析,把原始字符串原样交给 validator。
+    # [2026-07-31] 必须带 NoDecode：pydantic-settings 对 list 类型的环境变量会先做
+    # json.loads，逗号分隔的值在 mode="before" 校验器执行**之前**就抛 SettingsError,
+    # 服务直接起不来。NoDecode 关掉那次预解析,把原始字符串交给下面的校验器。
     cors_origins: Annotated[list[str], NoDecode] = [
         "https://uniai.net.cn",
         "https://www.uniai.net.cn",  # 带 www 在浏览器眼里是另一个源
@@ -43,21 +41,17 @@ class Settings(BaseSettings):
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_comma_separated_origins(cls, v: object) -> object:
-        """允许 .env 里写 `a,b,c` 而不是 JSON 数组，配置起来更顺手。
+        """允许 .env 里写 `a,b,c`（也兼容 JSON 数组），配置起来更顺手。"""
+        if isinstance(v, str):
+            text = v.strip()
+            if text.startswith("["):
+                # 兼容已经按 JSON 数组写好的 .env，别让这次修复反过来把它们弄坏。
+                import json
 
-        同时兼容 JSON 数组写法:`["a","b"]` 也能正常解析,免得已经按 JSON 配好的环境
-        在这次改动后反而失效。
-        """
-        if not isinstance(v, str):
-            return v
-
-        text = v.strip()
-        if text.startswith("["):
-            try:
-                return json.loads(text)
-            except ValueError:
-                pass
-        return [item.strip() for item in text.split(",") if item.strip()]
+                parsed = json.loads(text)
+                return [str(item).strip() for item in parsed]
+            return [item.strip() for item in text.split(",") if item.strip()]
+        return v
 
     # 限流 —— [2026-08-01]
     # 额度都是保守估的:按"正常用户远达不到"取值,目的是挡住脚本刷和暴力破解,不是精确配额。

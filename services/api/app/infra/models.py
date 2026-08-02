@@ -31,6 +31,8 @@ class User(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     external_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     phone_number: Mapped[str | None] = mapped_column(String(20), unique=True, index=True)
+    # argon2 哈希串（自带盐和参数）。为空表示这个用户还没设过密码，只能用验证码登录。
+    password_hash: Mapped[str | None] = mapped_column(String(255))
     data_consent: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

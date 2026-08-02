@@ -56,6 +56,7 @@ import {
   type VoicePhase,
 } from "@/app/demo/_components/VoiceInputButton";
 import { LoginPanel } from "@/app/yewne/chat/_components/LoginPanel";
+import { PasswordPanel } from "@/app/yewne/chat/_components/PasswordPanel";
 
 const PERSONA_GREETINGS: Record<Persona, string> = {
   youyou: "来了？直接说吧，我听着。",
@@ -167,9 +168,12 @@ export default function YewneChatPage() {
   const [selectedRound, setSelectedRound] = useState<RoundSummary | null>(null);
   const [selectedMessages, setSelectedMessages] = useState<RoundMessage[] | null>(null);
   const [selectedLoading, setSelectedLoading] = useState(false);
-  // 登录(手机号 + 验证码)
+  // 登录(手机号 + 验证码 / 密码两条路径)
   const [showLogin, setShowLogin] = useState(false);
   const [loggedInPhone, setLoggedInPhone] = useState<string | null>(null);
+  // 这个账号有没有设过密码,决定「设置密码」还是「修改密码」
+  const [hasPassword, setHasPassword] = useState(false);
+  const [showPasswordPanel, setShowPasswordPanel] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const externalUserIdRef = useRef("");
@@ -274,6 +278,7 @@ export default function YewneChatPage() {
       void fetchMe(token).then((me) => {
         if (me) {
           setLoggedInPhone(me.phone_number ?? getStoredPhoneNumber());
+          setHasPassword(me.has_password ?? false);
         } else {
           clearAuthToken();
         }
@@ -350,6 +355,8 @@ export default function YewneChatPage() {
     setAuthToken(result.token, result.phoneNumber);
     setLoggedInPhone(result.phoneNumber);
     setShowLogin(false);
+    // 验证码登录时前端并不知道这个账号有没有密码,问一下后端。
+    void fetchMe(result.token).then((me) => setHasPassword(me?.has_password ?? false));
 
     if (result.externalUserId !== externalUserIdRef.current) {
       setExternalUserId(result.externalUserId);
@@ -371,6 +378,7 @@ export default function YewneChatPage() {
     if (token) void fetchLogout(token);
     clearAuthToken();
     setLoggedInPhone(null);
+    setHasPassword(false);
   }
 
   // 往期:拉这个匿名用户已结束归档的轮次列表(最新在前)。
@@ -626,15 +634,30 @@ export default function YewneChatPage() {
             ))}
           </div>
           {loggedInPhone ? (
-            <button
-              type="button"
-              onClick={handleLogout}
-              aria-label="退出登录"
-              className="font-hand text-sm text-[#504437]/45 transition-colors hover:text-[#d66e76]"
+            <div
+              className="flex items-center gap-2 font-hand text-sm text-[#504437]/45"
               style={{ filter: "url(#crayon-soft)" }}
             >
-              {maskPhoneNumber(loggedInPhone)} · 退出
-            </button>
+              <span>{maskPhoneNumber(loggedInPhone)}</span>
+              <span aria-hidden>·</span>
+              <button
+                type="button"
+                onClick={() => setShowPasswordPanel(true)}
+                aria-label={hasPassword ? "修改密码" : "设置密码"}
+                className="transition-colors hover:text-[#d66e76]"
+              >
+                {hasPassword ? "修改密码" : "设置密码"}
+              </button>
+              <span aria-hidden>·</span>
+              <button
+                type="button"
+                onClick={handleLogout}
+                aria-label="退出登录"
+                className="transition-colors hover:text-[#d66e76]"
+              >
+                退出
+              </button>
+            </div>
           ) : (
             <button
               type="button"
@@ -654,6 +677,18 @@ export default function YewneChatPage() {
           externalUserId={getOrCreateExternalUserId()}
           onClose={() => setShowLogin(false)}
           onSuccess={handleLoginSuccess}
+        />
+      )}
+
+      {showPasswordPanel && getAuthToken() && (
+        <PasswordPanel
+          token={getAuthToken() as string}
+          hasPassword={hasPassword}
+          onClose={() => setShowPasswordPanel(false)}
+          onSuccess={() => {
+            setHasPassword(true);
+            setShowPasswordPanel(false);
+          }}
         />
       )}
 

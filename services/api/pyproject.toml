@@ -17,6 +17,7 @@ dependencies = [
     "psycopg[binary]>=3.3.4",
     "alembic>=1.18.5",
     "redis>=8.0.1",
+    "argon2-cffi>=25.1.0",
 ]
 
 [dependency-groups]

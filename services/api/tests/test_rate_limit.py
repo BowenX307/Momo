@@ -169,34 +169,48 @@ async def test_disabled_switch_skips_everything(
 # ── 验证码猜错次数上限 ──────────────────────────────────────────────────
 
 
+# 直接测 _consume_code：登录和重置密码两条路都走它，测这一层等于两条都覆盖到。
 @pytest.mark.asyncio
-async def test_verify_code_invalidates_code_after_max_attempts(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("purpose", ["login", "reset"])
+async def test_code_invalidated_after_max_attempts(
+    monkeypatch: pytest.MonkeyPatch, purpose: str
 ) -> None:
     """猜错到上限后验证码本身作废，逼对方重新发码(发码侧有每日上限)。"""
     monkeypatch.setattr(settings, "verify_code_max_attempts", 3)
-    redis = _FakeRedis({"verify_code:13800000000": "123456"})
+    code_key = f"verify_code:{purpose}:13800000000"
+    redis = _FakeRedis({code_key: "123456"})
 
     for _ in range(2):
         with pytest.raises(auth_service.AuthError) as exc:
-            await auth_service.verify_code(
-                session=None,
-                redis=redis,
-                phone_number="13800000000",
-                code="000000",
-                external_user_id="anon-1",
+            await auth_service._consume_code(
+                redis, phone_number="13800000000", code="000000", purpose=purpose
             )
         assert exc.value.code == "invalid_code"
 
     with pytest.raises(auth_service.AuthError) as exc:
-        await auth_service.verify_code(
-            session=None,
-            redis=redis,
-            phone_number="13800000000",
-            code="000000",
-            external_user_id="anon-1",
+        await auth_service._consume_code(
+            redis, phone_number="13800000000", code="000000", purpose=purpose
         )
     assert exc.value.code == "too_many_attempts"
 
     # 关键：正确的验证码此后也不再可用，必须重新发送。
-    assert await redis.get("verify_code:13800000000") is None
+    assert await redis.get(code_key) is None
+
+
+@pytest.mark.asyncio
+async def test_successful_verification_clears_attempt_counter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """猜错几次后猜对，计数要清零，否则下一个验证码会带着旧账继续算。"""
+    monkeypatch.setattr(settings, "verify_code_max_attempts", 3)
+    redis = _FakeRedis({"verify_code:login:13800000000": "123456"})
+
+    with pytest.raises(auth_service.AuthError):
+        await auth_service._consume_code(
+            redis, phone_number="13800000000", code="000000", purpose="login"
+        )
+    await auth_service._consume_code(
+        redis, phone_number="13800000000", code="123456", purpose="login"
+    )
+
+    assert await redis.get("verify_code_attempts:login:13800000000") is None
