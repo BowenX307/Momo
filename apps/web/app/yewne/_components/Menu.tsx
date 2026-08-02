@@ -90,7 +90,20 @@ export function Menu() {
               ))}
             </div>
 
-            <div className="mt-auto pt-10 text-sm text-stone-500">服务条款 · 隐私政策</div>
+            {/* 合成一个链接而不是分成"服务条款·隐私政策"两条：目前只有《Alpha 测试
+                用户协议》一份文档，没有独立的隐私政策。这份协议里确有实质的个人信息
+                条款（第五节「对话数据与个人信息保护」、第十四节「投诉、申诉与联系
+                我们」），所以叫「用户协议与隐私条款」是准确的；写成「隐私政策」则会
+                指向一份不存在的文件。独立隐私政策成文后再拆成两条。 */}
+            <div className="mt-auto pt-10 text-sm text-stone-500">
+              <Link
+                href="/yewne/terms"
+                onClick={() => setOpen(false)}
+                className="underline decoration-dotted underline-offset-4 transition-colors hover:text-stone-800"
+              >
+                用户协议与隐私条款
+              </Link>
+            </div>
           </nav>
         </div>
       )}
