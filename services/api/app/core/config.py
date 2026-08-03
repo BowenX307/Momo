@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     env: Literal["dev", "staging", "prod"] = "dev"
     debug: bool = True
 
+    # 管理后台 token（在 /internal 后台编辑 persona prompt / 采样参数时用，
+    # 走 X-Admin-Token 请求头）。留空则 /v1/admin/* 一律返回 503，不会意外暴露。
+    admin_token: str = ""
+
     # CORS —— 允许跨源访问本 API 的站点白名单。
     # [2026-07-29] 原值是 ["*"](任何站点),配合 allow_credentials=True 时 Starlette 会
     # 回显调用方 Origin 并附带 Allow-Credentials,等于给每个源都发了一张带凭证的通行证。

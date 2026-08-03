@@ -41,3 +41,10 @@ docs/unienv.md
 # 个人工作笔记(不进版本库)
 *.local.md
 docs/unienv*.md
+
+# 运行时状态,由 /internal 后台写入,不是源码
+# 出厂默认在 default_personas.json(已纳管);线上实际生效的 prompt 在 runtime_overrides.json,
+# 它会被后台随时改写,跟进版本库只会天天冲突。要留历史用 scripts/snapshot_prompts.sh
+# 导出到 docs/prompt-snapshots/ (那个目录是纳管的)。
+services/api/app/llm/runtime_overrides.json
+services/api/app/llm/runtime_overrides.bak.*.json
