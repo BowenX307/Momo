@@ -6,16 +6,6 @@
  * 并把仓库正式改造成 pnpm workspace（届时本文件类型导入即可）。
  */
 
-export const SCENES = [
-  "late_night",
-  "rumination",
-  "relationship",
-  "stress",
-  "loneliness",
-] as const;
-
-export type Scene = (typeof SCENES)[number];
-
 export const PERSONAS = ["youyou", "nini"] as const;
 export type Persona = (typeof PERSONAS)[number];
 
@@ -41,9 +31,6 @@ export interface ChatDemoRequest {
   external_user_id?: string;
   /** 第一轮为空，后续轮次传回后端返回的会话 ID。 */
   conversation_id?: string | null;
-  /** 可选：每个会话第一句留空，让后端自动分类；后续轮把响应里的 scene 传回，
-   * 避免每轮都跑一次分类（多 1 次 LLM 调用）。 */
-  scene?: Scene | null;
   /** AI 人格，默认 nini（妮妮）。切换人格时前端应重置会话。 */
   persona?: Persona;
   history?: HistoryMessage[];
@@ -51,7 +38,6 @@ export interface ChatDemoRequest {
 
 export interface ChatDemoResponse {
   reply: string;
-  scene: Scene;
   safety_flag: SafetyFlag;
   is_mock: boolean;
   request_id: string;
@@ -84,7 +70,6 @@ export interface HealthResponse {
 
 export interface SynthesizeRequest {
   text: string;
-  scene?: Scene | null;
 }
 
 export interface SynthesizeResponse {
@@ -269,7 +254,6 @@ export interface StreamAudioEvent {
 export interface StreamDoneEvent {
   type: "done";
   reply: string;
-  scene: Scene;
   safety_flag: SafetyFlag;
   is_mock: boolean;
   request_id: string;
@@ -346,7 +330,6 @@ export async function fetchHealth(
 export interface RoundSummary {
   conversation_id: string;
   persona: Persona;
-  scene?: string | null;
   mood?: AftercareMood | null;
   letter?: string | null;
   created_at: string;

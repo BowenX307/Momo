@@ -36,7 +36,6 @@ class LLMProvider(Protocol):
 
     async def complete(
         self,
-        scene: str,
         user_text: str,
         history: list[dict] | None = None,
         persona: str = "nini",
@@ -46,26 +45,17 @@ class LLMProvider(Protocol):
 class MockProvider:
     """固定回复的 mock provider，用于 demo 与离线开发。
 
-    回复模板按 scene 做轻微差异，便于前端肉眼区分是否传对场景。
+    [2026-08-03] 原先按 scene 分五套模板，随场景分类一起移除。
     """
-
-    _SCENE_TEMPLATES: dict[str, str] = {
-        "late_night": "现在是深夜，慢慢说，我陪你。{echo}这件事在你心里挺重的吧。",
-        "rumination": "你又在心里反复过这件事了。{echo}我们先把它放一放，呼吸一下。",
-        "relationship": "听起来这段关系让你很消耗。{echo}你愿意多说一点是怎么走到这一步的吗？",
-        "stress": "压力堆到这种程度，能撑到现在已经不容易。{echo}先告诉我现在身体哪里最紧。",
-        "loneliness": "孤独的时候，连小事都会变得很大。{echo}我在这儿，慢慢说没关系。",
-    }
 
     _DEFAULT_TEMPLATE = "我在听。{echo}你愿意多说一点吗？"
 
     async def complete(
         self,
-        scene: str,
         user_text: str,
         history: list[dict] | None = None,
         persona: str = "nini",
     ) -> str:
-        template = self._SCENE_TEMPLATES.get(scene, self._DEFAULT_TEMPLATE)
+        template = self._DEFAULT_TEMPLATE
         echo = f"你说「{user_text.strip()[:40]}」，" if user_text.strip() else ""
         return template.format(echo=echo)

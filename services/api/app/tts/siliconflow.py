@@ -8,19 +8,6 @@ import httpx
 from app.core.config import settings
 from app.tts.provider import SynthesisResult, TTSError
 
-_SCENE_SPEED: dict[str, float] = {
-    "late_night": 0.88,
-    "rumination": 0.9,
-    "relationship": 0.92,
-    "stress": 0.9,
-    "loneliness": 0.9,
-}
-
-
-def _speed_for(scene: str | None) -> float:
-    if scene and scene in _SCENE_SPEED:
-        return _SCENE_SPEED[scene]
-    return settings.siliconflow_tts_speed
 
 
 class SiliconFlowTTSProvider:
@@ -29,8 +16,6 @@ class SiliconFlowTTSProvider:
     async def synthesize(
         self,
         text: str,
-        *,
-        scene: str | None = None,
     ) -> SynthesisResult:
         stripped = text.strip()
         if not stripped:
@@ -41,7 +26,7 @@ class SiliconFlowTTSProvider:
             "input": stripped,
             "voice": settings.siliconflow_tts_voice,
             "response_format": "mp3",
-            "speed": _speed_for(scene),
+            "speed": settings.siliconflow_tts_speed,
         }
         headers = {
             "Authorization": f"Bearer {settings.whisper_api_key}",

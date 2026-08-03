@@ -16,7 +16,7 @@ from app.domain.conversation.service import handle_chat_demo, stream_chat_demo
 from app.domain.safety.factory import get_safety_provider
 from app.infra.conversation_persistence import PostgresConversationPersistence
 from app.infra.database import get_db_session
-from app.llm.factory import get_llm_provider, get_scene_classifier
+from app.llm.factory import get_llm_provider
 from app.tts.factory import get_tts_provider
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -49,14 +49,12 @@ async def chat_demo(
     )
     safety_provider, _ = get_safety_provider()
     provider, is_mock = get_llm_provider()
-    classifier = get_scene_classifier()
     tts_provider, tts_is_mock = get_tts_provider()
     persistence = _get_persistence(request, session)
     return await handle_chat_demo(
         request,
         safety_provider=safety_provider,
         provider=provider,
-        classifier=classifier,
         is_mock=is_mock,
         tts_provider=tts_provider,
         tts_is_mock=tts_is_mock,
@@ -80,7 +78,6 @@ async def chat_demo_stream(
     )
     safety_provider, _ = get_safety_provider()
     provider, is_mock = get_llm_provider()
-    classifier = get_scene_classifier()
     tts_provider, tts_is_mock = get_tts_provider()
     persistence = _get_persistence(request, session)
     return StreamingResponse(
@@ -88,7 +85,6 @@ async def chat_demo_stream(
             request,
             safety_provider=safety_provider,
             provider=provider,
-            classifier=classifier,
             tts_provider=tts_provider,
             tts_is_mock=tts_is_mock,
             is_mock=is_mock,

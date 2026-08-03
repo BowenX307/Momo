@@ -34,7 +34,7 @@ async def test_minimax_synthesize_returns_mp3_on_success():
                 },
             )
         )
-        result = await provider.synthesize("我在的。", scene="late_night")
+        result = await provider.synthesize("我在的。", )
     assert result.audio == fake_mp3
 
 

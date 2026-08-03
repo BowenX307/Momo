@@ -24,7 +24,6 @@ import {
   type HealthResponse,
   type HistoryMessage,
   type Persona,
-  type Scene,
 } from "@/lib/api/yewne";
 import {
   enqueueAudio,
@@ -66,9 +65,7 @@ const PERSONA_LABELS: Record<Persona, string> = {
 type ConvTurn = PersistedConvTurn;
 
 export default function DemoPage() {
-  // scene 由后端在第一句话上自动分类；此后整个会话都沿用，不再每轮重判。
   // null = 第一句话还没发过 / 用户尚未"开口定调"。
-  const [scene, setScene] = useState<Scene | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [persona, setPersona] = useState<Persona>("nini");
   const [input, setInput] = useState("");
@@ -143,7 +140,6 @@ export default function DemoPage() {
   function handleClearSession() {
     clearSession(persona);
     setHistory([]);
-    setScene(null);
     setConversationId(null);
     setTurns([]);
     setReply(PERSONA_GREETINGS[persona]);
@@ -159,7 +155,6 @@ export default function DemoPage() {
     // 先保存当前人格的会话，切回来时能恢复。
     saveSession(persona, {
       history,
-      scene,
       conversationId,
       turns,
     });
@@ -178,7 +173,6 @@ export default function DemoPage() {
     const saved = loadSession(next);
     if (saved) {
       setHistory(saved.history);
-      setScene(saved.scene);
       setConversationId(saved.conversationId);
       setTurns(saved.turns);
       setRestoredAt(saved.savedAt);
@@ -189,7 +183,6 @@ export default function DemoPage() {
       );
     } else {
       setHistory([]);
-      setScene(null);
       setConversationId(null);
       setTurns([]);
       setRestoredAt(null);
@@ -205,7 +198,6 @@ export default function DemoPage() {
     if (saved) {
       /* eslint-disable react-hooks/set-state-in-effect -- mount 时恢复浏览器本地会话 */
       setHistory(saved.history);
-      setScene(saved.scene);
       setConversationId(saved.conversationId);
       setTurns(saved.turns);
       setRestoredAt(saved.savedAt);
@@ -259,14 +251,12 @@ export default function DemoPage() {
       conversation_id: conversationId,
       persona,
       history,
-      ...(scene ? { scene } : {}),
     };
     setLastCurl(buildCurl(payload, API_BASE));
 
     // Capture state values for use inside callbacks (React closure safety).
     const capturedHistory = history;
     const capturedTurns = turns;
-    const capturedScene = scene;
     const capturedConversationId = conversationId;
 
     // 逐句显示：每句语音开播时把对应文字追加上去，文字与语音同步出现。
@@ -304,7 +294,6 @@ export default function DemoPage() {
             } else {
               applyReply(ev.reply);
             }
-            if (ev.scene !== capturedScene) setScene(ev.scene);
             const nextConversationId =
               ev.conversation_id ?? capturedConversationId;
             if (nextConversationId !== capturedConversationId) {
@@ -323,7 +312,6 @@ export default function DemoPage() {
             setTurns(nextTurns);
             saveSession(persona, {
               history: nextHistory,
-              scene: ev.scene,
               conversationId: nextConversationId,
               turns: nextTurns,
             });
@@ -331,7 +319,6 @@ export default function DemoPage() {
 
             setLastResponse({
               reply: ev.reply,
-              scene: ev.scene,
               safety_flag: ev.safety_flag,
               is_mock: ev.is_mock,
               request_id: ev.request_id,
@@ -505,7 +492,7 @@ export default function DemoPage() {
           </div>
         )}
 
-        {/* 输入框：scene 由后端自动分类，用户不再选 */}
+        {/* 输入框 */}
         <div className="w-full max-w-md">
           <div className="flex items-end gap-2 rounded-2xl border border-stone-200 bg-white/70 p-2 focus-within:border-[#e88c6a] focus-within:bg-white dark:border-stone-800 dark:bg-stone-900/60 dark:focus-within:border-[#c66645] dark:focus-within:bg-stone-900">
             <VoiceInputButton

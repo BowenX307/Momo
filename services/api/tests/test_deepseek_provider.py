@@ -37,7 +37,7 @@ async def test_deepseek_complete_returns_content_on_200():
         )
 
         provider = DeepSeekProvider()
-        reply = await provider.complete(scene="late_night", user_text="睡不着")
+        reply = await provider.complete(user_text="睡不着")
 
         assert reply == expected
         sent = route.calls.last.request
@@ -62,7 +62,7 @@ async def test_deepseek_complete_raises_llm_error_on_non_200():
 
         provider = DeepSeekProvider()
         with pytest.raises(LLMError) as exc_info:
-            await provider.complete(scene="loneliness", user_text="hi")
+            await provider.complete(user_text="hi")
         assert exc_info.value.code == "http_status"
         assert exc_info.value.upstream_status == 402
 
@@ -76,7 +76,7 @@ async def test_deepseek_complete_raises_llm_error_on_timeout():
 
         provider = DeepSeekProvider()
         with pytest.raises(LLMError) as exc_info:
-            await provider.complete(scene="stress", user_text="hi")
+            await provider.complete(user_text="hi")
         assert exc_info.value.code == "timeout"
 
 
@@ -89,5 +89,5 @@ async def test_deepseek_complete_raises_llm_error_on_malformed_json():
 
         provider = DeepSeekProvider()
         with pytest.raises(LLMError) as exc_info:
-            await provider.complete(scene="rumination", user_text="hi")
+            await provider.complete(user_text="hi")
         assert exc_info.value.code == "decode"

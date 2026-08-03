@@ -26,7 +26,6 @@ import {
   type Persona,
   type RoundMessage,
   type RoundSummary,
-  type Scene,
 } from "@/lib/api/yewne";
 import {
   enqueueAudio,
@@ -187,7 +186,6 @@ function makeStamp() {
 }
 
 export default function YewneChatPage() {
-  const [scene, setScene] = useState<Scene | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [persona, setPersona] = useState<Persona>("nini");
   const [input, setInput] = useState("");
@@ -280,7 +278,6 @@ export default function YewneChatPage() {
     if (next === persona) return;
     saveSession(persona, {
       history,
-      scene,
       conversationId,
       turns,
     });
@@ -294,7 +291,6 @@ export default function YewneChatPage() {
     const saved = loadSession(next);
     if (saved) {
       setHistory(saved.history);
-      setScene(saved.scene);
       setConversationId(saved.conversationId);
       setTurns(saved.turns);
       setReply(
@@ -304,7 +300,6 @@ export default function YewneChatPage() {
       );
     } else {
       setHistory([]);
-      setScene(null);
       setConversationId(null);
       setTurns([]);
       setReply(PERSONA_GREETINGS[next]);
@@ -318,7 +313,6 @@ export default function YewneChatPage() {
     if (saved && saved.turns.length > 0) {
       /* eslint-disable react-hooks/set-state-in-effect -- mount 时恢复浏览器本地会话 */
       setHistory(saved.history);
-      setScene(saved.scene);
       setConversationId(saved.conversationId);
       setTurns(saved.turns);
       setReply(saved.turns[saved.turns.length - 1].reply);
@@ -390,7 +384,6 @@ export default function YewneChatPage() {
       setHistory([]);
       setTurns([]);
       setConversationId(null);
-      setScene(null);
       setPendingUser("");
       setReply(PERSONA_GREETINGS[persona]);
       setReplyKey((k) => k + 1);
@@ -418,7 +411,6 @@ export default function YewneChatPage() {
       setHistory([]);
       setTurns([]);
       setConversationId(null);
-      setScene(null);
       setReply(PERSONA_GREETINGS[persona]);
       setReplyKey((k) => k + 1);
     }
@@ -497,12 +489,10 @@ export default function YewneChatPage() {
       conversation_id: conversationId,
       persona,
       history,
-      ...(scene ? { scene } : {}),
     };
 
     const capturedHistory = history;
     const capturedTurns = turns;
-    const capturedScene = scene;
     const capturedConversationId = conversationId;
 
     let streamedText = "";
@@ -534,7 +524,6 @@ export default function YewneChatPage() {
             } else {
               applyReply(ev.reply);
             }
-            if (ev.scene !== capturedScene) setScene(ev.scene);
             const nextConversationId =
               ev.conversation_id ?? capturedConversationId;
             if (nextConversationId !== capturedConversationId) {
@@ -552,7 +541,6 @@ export default function YewneChatPage() {
             setPendingUser("");
             saveSession(persona, {
               history: nextHistory,
-              scene: ev.scene,
               conversationId: nextConversationId,
               turns: nextTurns,
             });
