@@ -4,7 +4,7 @@
  * /yewne/chat —— 高级版 demo 的对话页。
  *
  * 左右布局:左 40% 小人(idle/思考/写中 三态),右 60% 最新回复(手写体大字、逐字浮现)+ 输入。
- * 不是聊天气泡流,是"焦点句"。功能逻辑复用 /demo(流式/逐字渐显/语音/打断/人格/会话)。
+ * 不是聊天气泡流,是"焦点句"。流式/逐字渐显/语音/打断/人格/会话逻辑都在本文件里。
  *
  * TODO(素材):CHAR_IMG 的 thinking / writing 现在用占位图,待换成"思考"和"趴着写字"两张。
  */
@@ -53,7 +53,7 @@ import {
 import {
   VoiceInputButton,
   type VoicePhase,
-} from "@/app/demo/_components/VoiceInputButton";
+} from "@/app/_shared/VoiceInputButton";
 import { LoginPanel } from "@/app/yewne/chat/_components/LoginPanel";
 import { PasswordPanel } from "@/app/yewne/chat/_components/PasswordPanel";
 
