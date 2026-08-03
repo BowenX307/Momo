@@ -85,6 +85,19 @@ class FakeRedis:
     async def delete(self, key: str) -> None:
         self.data.pop(key, None)
         self.sets.pop(key, None)
+        self.ttls.pop(key, None)
+
+    # [2026-08-01] 验证码猜错计数用到 incr/expire/ttl，补上这三个命令。
+    async def incr(self, key: str) -> int:
+        self.data[key] = str(int(self.data.get(key, 0)) + 1)
+        return int(self.data[key])
+
+    async def expire(self, key: str, seconds: int) -> bool:
+        self.ttls[key] = seconds
+        return True
+
+    async def ttl(self, key: str) -> int:
+        return self.ttls.get(key, -1)
 
     async def smembers(self, key: str) -> set[str]:
         return set(self.sets.get(key, set()))

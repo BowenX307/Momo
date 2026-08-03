@@ -5,10 +5,11 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import RedisDep, enforce_rate_limit
 from app.core.config import settings
 from app.domain.conversation.schemas import ChatDemoRequest, ChatDemoResponse
 from app.domain.conversation.service import handle_chat_demo, stream_chat_demo
@@ -36,7 +37,16 @@ def _get_persistence(
 async def chat_demo(
     request: ChatDemoRequest,
     session: DatabaseSession,
+    http_request: Request,
+    redis: RedisDep,
 ) -> ChatDemoResponse:
+    await enforce_rate_limit(
+        http_request,
+        redis,
+        bucket="chat",
+        limit=settings.rate_limit_chat_per_minute,
+        identity=request.external_user_id,
+    )
     safety_provider, _ = get_safety_provider()
     provider, is_mock = get_llm_provider()
     classifier = get_scene_classifier()
@@ -58,7 +68,16 @@ async def chat_demo(
 async def chat_demo_stream(
     request: ChatDemoRequest,
     session: DatabaseSession,
+    http_request: Request,
+    redis: RedisDep,
 ) -> StreamingResponse:
+    await enforce_rate_limit(
+        http_request,
+        redis,
+        bucket="chat",
+        limit=settings.rate_limit_chat_per_minute,
+        identity=request.external_user_id,
+    )
     safety_provider, _ = get_safety_provider()
     provider, is_mock = get_llm_provider()
     classifier = get_scene_classifier()

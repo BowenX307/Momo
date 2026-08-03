@@ -1,11 +1,10 @@
 """应用配置 - 通过环境变量加载"""
 
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
-from typing_extensions import Annotated
 
 _ENV_FILE = Path(__file__).parent.parent.parent / ".env"
 
@@ -53,6 +52,26 @@ class Settings(BaseSettings):
                 return [str(item).strip() for item in parsed]
             return [item.strip() for item in text.split(",") if item.strip()]
         return v
+
+    # 限流 —— [2026-08-01]
+    # 额度都是保守估的:按"正常用户远达不到"取值,目的是挡住脚本刷和暴力破解,不是精确配额。
+    # 若日志里 rate_limited 出现在真实用户身上,说明估紧了,调大即可(全部可用 .env 覆盖)。
+    rate_limit_enabled: bool = True
+    rate_limit_chat_per_minute: int = 30  # 一轮对话十几秒,30 已经很宽松
+    rate_limit_speech_per_minute: int = 60  # 语音按句调用,比 chat 频繁
+    rate_limit_aftercare_per_minute: int = 10  # 一轮对话结束才调一次
+    rate_limit_verify_code_per_minute: int = 10  # 配合下面的尝试上限一起挡暴力破解
+
+    # 按身份限流之外再按 IP 兜一层,倍数放大——因为 external_user_id 是客户端自己生成的,
+    # 换一个就能绕过按身份的额度。倍数取大是刻意的:线上 nginx 是否转发真实 IP 尚未确认,
+    # 若没转发则所有用户在后端看来是同一个 IP、共用这一份额度,额度太小会误伤所有人。
+    # 确认 nginx 有传 X-Forwarded-For 之后,这个倍数应当调小才真正有效。
+    rate_limit_ip_multiplier: int = 10
+
+    # 验证码最多能猜错几次,超过即作废、必须重新发送。
+    # 原先完全不限次数:6 位码 100 万种组合、5 分钟有效期、接口又无限流,
+    # 可被暴力破解并直接拿到合法 token(账号接管)。
+    verify_code_max_attempts: int = 5
 
     # 数据库持久化；默认关闭，未安装 PostgreSQL 也能运行聊天功能
     persistence_enabled: bool = False

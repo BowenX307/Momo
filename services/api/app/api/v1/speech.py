@@ -4,8 +4,10 @@
 本接口只负责「听」。
 """
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
+from app.api.v1.deps import RedisDep, enforce_rate_limit
+from app.core.config import settings
 from app.domain.speech.schemas import (
     SynthesizeRequest,
     SynthesizeResponse,
@@ -23,7 +25,20 @@ _ALLOWED_CONTENT_PREFIXES = ("audio/", "video/webm", "application/octet-stream")
 
 
 @router.post("/transcribe", response_model=TranscribeResponse)
-async def transcribe(audio: UploadFile = File(...)) -> TranscribeResponse:
+async def transcribe(
+    http_request: Request,
+    redis: RedisDep,
+    audio: UploadFile = File(...),
+) -> TranscribeResponse:
+    # 这两个语音接口请求里没有任何身份标识(只有音频/文本),所以只能按 IP 限。
+    # 见 deps.client_ip 的说明：nginx 未确认是否转发真实 IP。
+    await enforce_rate_limit(
+        http_request,
+        redis,
+        bucket="speech",
+        limit=settings.rate_limit_speech_per_minute,
+        identity=None,
+    )
     content_type = audio.content_type
     if content_type and not any(
         content_type.startswith(p) if p.endswith("/") else content_type == p
@@ -57,7 +72,18 @@ async def transcribe(audio: UploadFile = File(...)) -> TranscribeResponse:
 
 
 @router.post("/synthesize", response_model=SynthesizeResponse)
-async def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
+async def synthesize(
+    request: SynthesizeRequest,
+    http_request: Request,
+    redis: RedisDep,
+) -> SynthesizeResponse:
+    await enforce_rate_limit(
+        http_request,
+        redis,
+        bucket="speech",
+        limit=settings.rate_limit_speech_per_minute,
+        identity=None,
+    )
     provider, is_mock = get_tts_provider()
     try:
         return await handle_synthesize(request, provider=provider, is_mock=is_mock)

@@ -14,10 +14,12 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import enforce_rate_limit
+from app.core.config import settings
 from app.domain.auth import service
 from app.domain.auth.schemas import (
     LogoutRequest,
@@ -41,6 +43,7 @@ RedisDep = Annotated[Redis, Depends(get_redis)]
 _ERROR_STATUS = {
     "cooldown": 429,
     "daily_limit": 429,
+    # [2026-08-01] too_many_attempts 现在有两个来源：密码连续错太多，以及验证码猜错超限。
     "too_many_attempts": 429,
     "invalid_code": 400,
     "terms_required": 400,
@@ -85,7 +88,17 @@ async def verify_code_route(
     request: VerifyCodeRequest,
     session: DatabaseSession,
     redis: RedisDep,
+    http_request: Request,
 ) -> VerifyCodeResponse:
+    # [2026-08-01] 按手机号限流。配合 service 里的猜错次数上限一起挡暴力破解：
+    # 次数上限压住单个验证码能被试几次，这里压住单位时间能发起多少次尝试。
+    await enforce_rate_limit(
+        http_request,
+        redis,
+        bucket="verify_code",
+        limit=settings.rate_limit_verify_code_per_minute,
+        identity=request.phone_number,
+    )
     try:
         token, external_user_id, ttl_seconds = await service.verify_code(
             session,

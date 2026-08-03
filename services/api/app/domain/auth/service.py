@@ -35,6 +35,10 @@ _CODE_KEY = "verify_code:{purpose}:{phone}"
 _COOLDOWN_KEY = "verify_code_sent:{phone}"
 _DAILY_KEY = "verify_code_daily:{phone}:{day}"
 _TOKEN_KEY = "auth_token:{token}"
+# [2026-08-01] 同一个验证码已经猜错几次，超过上限即作废。
+# 与下面的 _LOGIN_FAIL_KEY 是两件事：那个管密码连续错，这个管验证码被穷举。
+_ATTEMPTS_KEY = "verify_code_attempts:{purpose}:{phone}"
+
 # token 反查索引：auth_token 那张表只能 token→user，没法按用户枚举他的所有 token。
 # 重置密码后要把该用户其他设备全部踢下线，所以额外维护这个集合。
 _USER_TOKENS_KEY = "user_tokens:{user_id}"
@@ -127,12 +131,43 @@ async def _user_for_token(
 
 
 async def _consume_code(redis: Redis, *, phone_number: str, code: str, purpose: CodePurpose) -> None:
-    """校验验证码并立即作废（用过一次就不能再用）。"""
+    """校验验证码并立即作废（用过一次就不能再用）。
+
+    [2026-08-01] 加猜错次数上限。原先猜错什么都不做：验证码是 6 位数字(100 万种组合)、
+    有效期 5 分钟，接口又没有限流，等于可以无限次穷举。而且 send-code 不要求调用方是号码
+    主人，攻击者可以给别人的手机号发码再暴力破解，猜中即拿到合法 token，也就拿到了那个人
+    的全部对话记录。
+
+    错够 verify_code_max_attempts 次就把验证码本身作废，逼对方重新发送；发送侧本来就有
+    每日上限，于是每天可尝试次数从"无限"压到 daily_limit × max_attempts。
+
+    放在这里而不是 verify_code 里，是因为登录和重置密码两条路都走这个函数，改一处两处都
+    受益——重置密码那条如果不设限，同样能被穷举后直接改掉别人的密码。
+    """
     key = _CODE_KEY.format(purpose=purpose, phone=phone_number)
+    attempts_key = _ATTEMPTS_KEY.format(purpose=purpose, phone=phone_number)
+
     stored = await redis.get(key)
     if not stored or stored != code:
+        attempts = int(await redis.incr(attempts_key))
+        if attempts == 1:
+            # 跟验证码同寿命：验证码都过期了，计数再留着没有意义。
+            await redis.expire(attempts_key, settings.sms_code_ttl_seconds)
+
+        if attempts >= settings.verify_code_max_attempts:
+            await redis.delete(key)
+            await redis.delete(attempts_key)
+            logger.info(
+                "verify_code_attempts_exceeded",
+                phone=mask_phone(phone_number),
+                purpose=purpose,
+            )
+            raise AuthError("too_many_attempts", "错误次数过多，请重新获取验证码")
+
         raise AuthError("invalid_code", "验证码不对或已过期")
+
     await redis.delete(key)
+    await redis.delete(attempts_key)
 
 
 async def send_code(
