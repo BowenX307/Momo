@@ -106,11 +106,10 @@ async def handle_synthesize(
 ) -> SynthesizeResponse:
     """处理一次语音合成请求。"""
     request_id = uuid4().hex
-    scene_value = request.scene.value if request.scene else None
 
     try:
         clean_text = _clean_for_tts(request.text)
-        result = await provider.synthesize(clean_text, scene=scene_value)
+        result = await provider.synthesize(clean_text)
         audio_b64 = (
             base64.b64encode(result.audio).decode("ascii") if result.audio else ""
         )
@@ -118,7 +117,6 @@ async def handle_synthesize(
             "synthesize_ok",
             request_id=request_id,
             is_mock=is_mock,
-            scene=scene_value,
             text_chars=len(request.text),
             audio_bytes=len(result.audio),
         )

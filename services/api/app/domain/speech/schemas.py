@@ -1,6 +1,5 @@
 """语音相关的 Pydantic schema。"""
 
-from app.domain.conversation.schemas import Scene
 from pydantic import BaseModel, Field
 
 
@@ -19,9 +18,11 @@ class SynthesizeRequest(BaseModel):
     text: str = Field(
         ..., min_length=1, max_length=2000, description="要合成的于你回复文本"
     )
-    scene: Scene | None = Field(
+    # [2026-08-03] 场景分类已移除；保留字段仅为兼容老客户端，收下即丢弃。
+    scene: str | None = Field(
         default=None,
-        description="可选场景，用于微调语速等 TTS 参数",
+        deprecated=True,
+        description="[已废弃] 收下即丢弃",
     )
 
 

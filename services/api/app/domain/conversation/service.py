@@ -1,18 +1,19 @@
-"""会话编排：safety → 场景分流 → llm 对话 → 拼装响应。
+"""会话编排：safety → llm 对话 → 拼装响应。
 
 数据库持久化通过可选接口注入；未提供匿名用户标识时保持无状态行为。
-单元测试通过 fake provider / classifier / persistence 覆盖该模块，避免真实网络调用。
+单元测试通过 fake provider / persistence 覆盖该模块，避免真实网络调用。
 
 降级策略：
-- safety 命中危机：直接固定文案，**不**进 LLM，也不浪费一次分类调用；
-- scene 缺省 + 分类失败：classifier 内部会兜底为 `loneliness`，service 层不感知；
+- safety 命中危机：直接固定文案，**不**进 LLM；
 - LLM 对话抛 `LLMError`（超时/网络/非 200/解析失败）：降级到 `MockProvider`，
   响应里 `degraded=True` + `is_mock=True`，便于前端弹"临时离线"提示、
   也便于演示时一眼看出上游出问题。
 
-scene 路由：
-- 前端只在每个会话第一句传 `scene=None`，后续把响应里返回的 scene 传回，
-  避免每轮都跑一次分类（多 1 次 LLM 调用 ≈ 多花 50% token 与延迟）。
+[2026-08-03] 移除场景分类。原先每轮第一句会额外调一次模型把消息归到 5 个 scene
+之一，但 `DeepSeekProvider.complete()` 收下 scene 后从未把它拼进 prompt——只有
+MockProvider 拿它变化假回复。也就是说线上每轮白花一次模型调用、白等一份延迟，
+对回复内容没有任何影响。这也是"第一条回复明显比后面慢"的主因。
+（拍立得的 12 场景是另一套、仍在用，见 domain/aftercare。）
 """
 
 import asyncio
@@ -27,14 +28,12 @@ from app.domain.conversation.schemas import (
     ChatDemoRequest,
     ChatDemoResponse,
     HistoryMessage,
-    Scene,
 )
 from app.domain.conversation.persistence import ConversationPersistence
 from app.domain.reaction.service import detect_reaction
 from app.domain.safety import SafetyReason
 from app.domain.safety.provider import SafetyProvider
 from app.domain.speech.service import _clean_for_tts
-from app.llm.classifier import SceneClassifier
 from app.llm.provider import LLMError, LLMProvider, MockProvider
 from app.tts.provider import TTSError, TTSProvider
 
@@ -97,7 +96,6 @@ async def _detect_emotion_safe(user_text: str, provider: LLMProvider) -> str:
 
 async def _synthesize_audio(
     reply: str,
-    scene: Scene,
     tts_provider: TTSProvider,
     tts_is_mock: bool,
     request_id: str,
@@ -106,7 +104,7 @@ async def _synthesize_audio(
     """调用 TTS，返回 (audio_base64, content_type, is_mock)。失败时静默降级返回空音频。"""
     try:
         result = await tts_provider.synthesize(
-            _clean_for_tts(reply), scene=scene.value, persona=persona
+            _clean_for_tts(reply), persona=persona
         )
         audio_b64 = (
             base64.b64encode(result.audio).decode("ascii") if result.audio else ""
@@ -126,7 +124,6 @@ async def _persist_exchange_safe(
     persistence: ConversationPersistence | None,
     request: ChatDemoRequest,
     *,
-    scene: Scene,
     reply: str,
     safety_flag: SafetyReason,
     emotion: str,
@@ -142,7 +139,6 @@ async def _persist_exchange_safe(
         return await persistence.save_exchange(
             external_user_id=request.external_user_id,
             conversation_id=request.conversation_id,
-            scene=scene.value,
             persona=request.persona.value,
             user_text=request.user_text,
             reply=reply,
@@ -165,7 +161,6 @@ async def handle_chat_demo(
     request: ChatDemoRequest,
     safety_provider: SafetyProvider,
     provider: LLMProvider,
-    classifier: SceneClassifier,
     is_mock: bool,
     tts_provider: TTSProvider | None = None,
     tts_is_mock: bool = True,
@@ -174,27 +169,23 @@ async def handle_chat_demo(
     """处理一次 demo 对话。
 
     Args:
-        request: 入参（user_text + 可选 scene + history）。
+        request: 入参（user_text + history）。
         provider: 由 `factory.get_llm_provider()` 注入的对话 provider。
-        classifier: 由 `factory.get_scene_classifier()` 注入的场景分类器。
         is_mock: provider 是否为 MockProvider，透传到响应里便于演示。
     """
     request_id = uuid4().hex
 
     safety = await safety_provider.check(request.user_text)
     if not safety.allowed:
-        scene = request.scene or Scene.LONELINESS
         logger.info(
             "chat_demo_safety_fallback",
             request_id=request_id,
-            scene=scene.value,
             reason=safety.reason,
         )
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
         if tts_provider:
             audio_b64, audio_ct, audio_mock = await _synthesize_audio(
                 safety.fallback_text,
-                scene,
                 tts_provider,
                 tts_is_mock,
                 request_id,
@@ -203,7 +194,6 @@ async def handle_chat_demo(
         conversation_id = await _persist_exchange_safe(
             persistence,
             request,
-            scene=scene,
             reply=safety.fallback_text,
             safety_flag=safety.reason,
             emotion="",
@@ -213,7 +203,6 @@ async def handle_chat_demo(
         )
         return ChatDemoResponse(
             reply=safety.fallback_text,
-            scene=scene,
             safety_flag=safety.reason,
             is_mock=is_mock,
             request_id=request_id,
@@ -223,22 +212,11 @@ async def handle_chat_demo(
             audio_is_mock=audio_mock,
         )
 
-    if request.scene is None:
-        scene = await classifier.classify(request.user_text)
-        logger.info(
-            "chat_demo_scene_classified",
-            request_id=request_id,
-            scene=scene.value,
-        )
-    else:
-        scene = request.scene
-
     history = _build_history(request.history)
 
     try:
         reply, emotion = await asyncio.gather(
             provider.complete(
-                scene=scene.value,
                 user_text=request.user_text,
                 history=history,
                 persona=request.persona.value,
@@ -248,7 +226,6 @@ async def handle_chat_demo(
         logger.info(
             "chat_demo_ok",
             request_id=request_id,
-            scene=scene.value,
             persona=request.persona.value,
             is_mock=is_mock,
             reply_chars=len(reply),
@@ -262,7 +239,6 @@ async def handle_chat_demo(
         if tts_provider:
             audio_b64, audio_ct, audio_mock = await _synthesize_audio(
                 reply,
-                scene,
                 tts_provider,
                 tts_is_mock,
                 request_id,
@@ -272,7 +248,6 @@ async def handle_chat_demo(
         conversation_id = await _persist_exchange_safe(
             persistence,
             request,
-            scene=scene,
             reply=reply,
             safety_flag="ok",
             emotion=emotion,
@@ -282,7 +257,6 @@ async def handle_chat_demo(
         )
         return ChatDemoResponse(
             reply=reply,
-            scene=scene,
             safety_flag="ok",
             is_mock=is_mock,
             request_id=request_id,
@@ -297,12 +271,10 @@ async def handle_chat_demo(
         logger.warning(
             "chat_demo_llm_failed_degrading_to_mock",
             request_id=request_id,
-            scene=scene.value,
             error_code=exc.code,
             upstream_status=exc.upstream_status,
         )
         mock_reply = await MockProvider().complete(
-            scene=scene.value,
             user_text=request.user_text,
             history=history,
             persona=request.persona.value,
@@ -311,7 +283,6 @@ async def handle_chat_demo(
         if tts_provider:
             audio_b64, audio_ct, audio_mock = await _synthesize_audio(
                 mock_reply,
-                scene,
                 tts_provider,
                 tts_is_mock,
                 request_id,
@@ -320,7 +291,6 @@ async def handle_chat_demo(
         conversation_id = await _persist_exchange_safe(
             persistence,
             request,
-            scene=scene,
             reply=mock_reply,
             safety_flag="ok",
             emotion="",
@@ -330,7 +300,6 @@ async def handle_chat_demo(
         )
         return ChatDemoResponse(
             reply=mock_reply,
-            scene=scene,
             safety_flag="ok",
             is_mock=True,
             request_id=request_id,
@@ -366,7 +335,6 @@ async def stream_chat_demo(
     request: ChatDemoRequest,
     safety_provider: SafetyProvider,
     provider: LLMProvider,
-    classifier: SceneClassifier,
     tts_provider: TTSProvider | None,
     tts_is_mock: bool,
     is_mock: bool,
@@ -377,12 +345,10 @@ async def stream_chat_demo(
 
     safety = await safety_provider.check(request.user_text)
     if not safety.allowed:
-        scene = request.scene or Scene.LONELINESS
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
         if tts_provider:
             audio_b64, audio_ct, audio_mock = await _synthesize_audio(
                 safety.fallback_text,
-                scene,
                 tts_provider,
                 tts_is_mock,
                 request_id,
@@ -404,7 +370,6 @@ async def stream_chat_demo(
         conversation_id = await _persist_exchange_safe(
             persistence,
             request,
-            scene=scene,
             reply=safety.fallback_text,
             safety_flag=safety.reason,
             emotion="",
@@ -418,7 +383,6 @@ async def stream_chat_demo(
                 {
                     "type": "done",
                     "reply": safety.fallback_text,
-                    "scene": scene.value,
                     "safety_flag": safety.reason,
                     "is_mock": False,
                     "request_id": request_id,
@@ -431,11 +395,6 @@ async def stream_chat_demo(
             + "\n\n"
         )
         return
-
-    if request.scene is None:
-        scene = await classifier.classify(request.user_text)
-    else:
-        scene = request.scene
 
     history = _build_history(request.history)
 
@@ -450,7 +409,6 @@ async def stream_chat_demo(
 
     try:
         token_stream = provider.stream_complete(  # type: ignore[attr-defined]
-            scene=scene.value,
             user_text=request.user_text,
             history=history,
             persona=request.persona.value,
@@ -461,7 +419,6 @@ async def stream_chat_demo(
             if tts_provider:
                 audio_b64, audio_ct, audio_mock = await _synthesize_audio(
                     sentence,
-                    scene,
                     tts_provider,
                     tts_is_mock,
                     request_id,
@@ -487,14 +444,12 @@ async def stream_chat_demo(
         # provider 不支持流式（如 Mock）：降级到一次性调用
         try:
             full_reply = await provider.complete(
-                scene=scene.value,
                 user_text=request.user_text,
                 history=history,
                 persona=request.persona.value,
             )
         except LLMError:
             full_reply = await MockProvider().complete(
-                scene=scene.value,
                 user_text=request.user_text,
                 history=history,
                 persona=request.persona.value,
@@ -505,7 +460,6 @@ async def stream_chat_demo(
         if tts_provider:
             audio_b64, audio_ct, audio_mock = await _synthesize_audio(
                 full_reply,
-                scene,
                 tts_provider,
                 tts_is_mock,
                 request_id,
@@ -530,7 +484,6 @@ async def stream_chat_demo(
     conversation_id = await _persist_exchange_safe(
         persistence,
         request,
-        scene=scene,
         reply=full_reply,
         safety_flag="ok",
         emotion=emotion,
@@ -544,7 +497,6 @@ async def stream_chat_demo(
             {
                 "type": "done",
                 "reply": full_reply,
-                "scene": scene.value,
                 "safety_flag": "ok",
                 "is_mock": response_is_mock,
                 "request_id": request_id,

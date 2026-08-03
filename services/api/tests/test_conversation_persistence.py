@@ -16,7 +16,6 @@ async def test_save_exchange_keeps_latest_seven_browser_conversations() -> None:
     user = SimpleNamespace(id=UUID("00000000-0000-0000-0000-000000000001"))
     conversation = SimpleNamespace(
         id=UUID("00000000-0000-0000-0000-000000000002"),
-        scene="stress",
         persona="nini",
     )
 
@@ -28,7 +27,6 @@ async def test_save_exchange_keeps_latest_seven_browser_conversations() -> None:
     result = await persistence.save_exchange(
         external_user_id="browser-user",
         conversation_id=None,
-        scene="stress",
         persona="nini",
         user_text="今天有点累",
         reply="先休息一下。",

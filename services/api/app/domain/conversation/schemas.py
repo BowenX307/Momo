@@ -13,20 +13,6 @@ from pydantic import BaseModel, Field, field_validator
 from app.domain.safety import SafetyReason
 
 
-class Scene(str, Enum):
-    """用户进入对话时选择的场景。
-
-    与产品规则中的 5 个核心场景一一对应，命名采用英文 snake_case
-    便于后端日志与前端枚举共享。
-    """
-
-    LATE_NIGHT = "late_night"
-    RUMINATION = "rumination"
-    RELATIONSHIP = "relationship"
-    STRESS = "stress"
-    LONELINESS = "loneliness"
-
-
 class Persona(str, Enum):
     """AI 陪伴人格。
 
@@ -46,11 +32,7 @@ class HistoryMessage(BaseModel):
 
 
 class ChatDemoRequest(BaseModel):
-    """单轮 demo 请求，支持传入历史上下文。
-
-    scene 为 None 时由后端 LLM 自动分类；通常前端只在每个会话的**第一句**
-    传 None，后续轮次把响应里返回的 scene 传回来，避免重复分类带来的延迟与成本。
-    """
+    """单轮 demo 请求，支持传入历史上下文。"""
 
     user_text: str = Field(
         ...,
@@ -67,9 +49,14 @@ class ChatDemoRequest(BaseModel):
         default=None,
         description="后端返回的会话 ID；第一轮为空，后续轮次原样传回",
     )
-    scene: Scene | None = Field(
+    # [2026-08-03] 场景分类已移除。这个字段只为兼容线上老客户端(尤其是 Unity,
+    # 他们的 YewneClient.cs 会在第二轮起回传 scene)——收下但完全不用,不再校验取值,
+    # 也不再出现在响应里。老客户端因此不会吃 422,下次更新 zip 时自然清掉。
+    # 删除前提:确认线上已无客户端发送此字段。
+    scene: str | None = Field(
         default=None,
-        description="本轮场景；为 None 时后端用 SceneClassifier 自动分类",
+        deprecated=True,
+        description="[已废弃] 收下即丢弃，保留仅为兼容老客户端",
     )
     persona: Persona = Field(
         default=Persona.NINI,
@@ -89,7 +76,7 @@ class ChatDemoRequest(BaseModel):
     @field_validator("scene", mode="before")
     @classmethod
     def _empty_scene_is_none(cls, v: object) -> object:
-        """空串当作未指定。Unity 的 JsonUtility 会把 null 序列化成 ""，别让它吃 422。"""
+        """空串当作未指定。Unity 的 JsonUtility 把 null 序列化成 ""，别让它吃 422。"""
         return None if v == "" else v
 
     @field_validator("conversation_id", mode="before")
@@ -109,7 +96,6 @@ class ChatDemoResponse(BaseModel):
     """
 
     reply: str
-    scene: Scene
     safety_flag: SafetyReason
     is_mock: bool
     request_id: str
@@ -141,7 +127,6 @@ class RoundSummary(BaseModel):
 
     conversation_id: UUID
     persona: Persona
-    scene: str | None = Field(default=None, description="该轮判定的场景，可能为空")
     mood: str | None = Field(default=None, description="结束时生成的拍立得情绪档")
     letter: str | None = Field(default=None, description="结束时生成的拍立得回信正文")
     created_at: str = Field(description="轮次开始时间，ISO 8601")

@@ -14,7 +14,6 @@ class ConversationPersistence(Protocol):
         *,
         external_user_id: str,
         conversation_id: UUID | None,
-        scene: str,
         persona: str,
         user_text: str,
         reply: str,

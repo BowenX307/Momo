@@ -8,20 +8,6 @@ import httpx
 from app.core.config import settings
 from app.tts.provider import SynthesisResult, TTSError
 
-# 按 scene 微调语速，贴合于你「慢慢说、不抢话」的人设
-_SCENE_SPEED: dict[str, float] = {
-    "late_night": 0.88,
-    "rumination": 0.9,
-    "relationship": 0.92,
-    "stress": 0.9,
-    "loneliness": 0.9,
-}
-
-
-def _speed_for(scene: str | None) -> float:
-    if scene and scene in _SCENE_SPEED:
-        return _SCENE_SPEED[scene]
-    return settings.minimax_tts_speed
 
 
 class MiniMaxTTSProvider:
@@ -30,8 +16,6 @@ class MiniMaxTTSProvider:
     async def synthesize(
         self,
         text: str,
-        *,
-        scene: str | None = None,
     ) -> SynthesisResult:
         stripped = text.strip()
         if not stripped:
@@ -43,7 +27,7 @@ class MiniMaxTTSProvider:
             "stream": False,
             "voice_setting": {
                 "voice_id": settings.minimax_tts_voice_id,
-                "speed": _speed_for(scene),
+                "speed": settings.minimax_tts_speed,
                 "vol": 1.0,
                 "pitch": 0,
             },

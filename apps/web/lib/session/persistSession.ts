@@ -1,4 +1,4 @@
-import type { HistoryMessage, Persona, Scene } from "@/lib/api/yewne";
+import type { HistoryMessage, Persona } from "@/lib/api/yewne";
 
 // 会话按人格分键存储，切换人格时各自保留历史。
 const KEY_PREFIX = "yewne:session:";
@@ -45,7 +45,6 @@ export interface ConvTurn {
 
 export interface PersistedSession {
   history: HistoryMessage[];
-  scene: Scene | null;
   conversationId: string | null;
   turns: ConvTurn[];
   savedAt: number;

@@ -70,6 +70,8 @@ class Conversation(Base):
         nullable=False,
         index=True,
     )
+    # [2026-08-03] 场景分类已移除，新对话不再写这一列。保留是因为历史数据里有值，
+    # 且删列需要一次不可逆 migration——没有收益，等确认没人再查历史 scene 时再删。
     scene: Mapped[str | None] = mapped_column(String(32))
     persona: Mapped[str] = mapped_column(
         String(32),

@@ -124,7 +124,7 @@ yewneClient.Say("今天好累啊");
 |---|---|---|---|
 | `user_text` | string | ✅ | 用户这一句话 |
 | `persona` | `"youyou"` \| `"nini"` | 否 | 人格,默认 `nini`(妮妮)。切人格时清空 `history` |
-| `scene` | string | 否 | **第一句留空**(`""` 即可),后端自动判断场景;之后把响应里的 `scene` 原样带回来,可省一次模型调用,**后续每轮快约 1 秒** |
+| `scene` | string | 否 | **[2026-08-03 已废弃]** 场景分类整套移除了。现在传不传、传什么值后端都忽略,不会报错。老版本 `YewneClient.cs` 可以继续跑,下次更新脚本时删掉这个字段即可。**顺带好处:第一句不再多一次模型调用,首句明显变快** |
 | `history` | array | 否 | 最近对话历史,最多 20 条(10 轮),**不含本轮 `user_text`** |
 
 `history` 元素格式:
@@ -145,7 +145,6 @@ yewneClient.Say("今天好累啊");
   "reaction": "关心",
   "audio_base64": "SUQzBAAAAAA...(MP3 的 base64)",
   "audio_content_type": "audio/mpeg",
-  "scene": "late_night",
   "safety_flag": "ok",
   "degraded": false,
   "is_mock": false,
@@ -159,7 +158,6 @@ yewneClient.Say("今天好累啊");
 | `emotion` | **用户**的情绪(12 个标签之一,见下),想用可用;不用也行 |
 | `reaction` | **小人该播的反应动画**(核心,见第六节)。空串表示无,播 Idle |
 | `audio_base64` | 小人的语音,MP3 的 base64。**播放时长 = 说话状态时长** |
-| `scene` | 下一轮请求原样带回 |
 | `safety_flag` | `"ok"` 以外表示触发了安全兜底(如 `crisis_keyword`),可加提示 |
 | `degraded` | `true` = 真模型挂了、当前是兜底回复,可显示"临时离线" |
 | `is_mock` | `true` = 没配 key,跑的是假数据 |

@@ -22,7 +22,6 @@ def _round_summary(conversation: Conversation) -> RoundSummary:
     return RoundSummary(
         conversation_id=conversation.id,
         persona=conversation.persona,
-        scene=conversation.scene,
         mood=conversation.mood,
         letter=conversation.letter,
         created_at=conversation.created_at.isoformat(),

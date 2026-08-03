@@ -88,7 +88,6 @@ class DoubaoTTSProvider:
         self,
         text: str,
         *,
-        scene: str | None = None,
         persona: str | None = None,
     ) -> SynthesisResult:
         stripped = text.strip()

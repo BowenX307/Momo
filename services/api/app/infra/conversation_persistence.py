@@ -26,7 +26,6 @@ class PostgresConversationPersistence:
         *,
         external_user_id: str,
         conversation_id: UUID | None,
-        scene: str,
         persona: str,
         user_text: str,
         reply: str,
@@ -49,11 +48,9 @@ class PostgresConversationPersistence:
             if conversation is None:
                 conversation = await self._conversations.create(
                     user_id=user.id,
-                    scene=scene,
                     persona=persona,
                 )
             else:
-                conversation.scene = scene
                 conversation.persona = persona
 
             await self._messages.create(

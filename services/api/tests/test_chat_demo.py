@@ -28,7 +28,7 @@ def test_chat_demo_returns_mock_reply():
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["reply"]
-    assert body["scene"] == "late_night"
+    assert "scene" not in body, "scene 已随场景分类移除，不应再出现在响应里"
     assert body["safety_flag"] == "ok"
     assert body["is_mock"] is True
     assert body["request_id"]
@@ -56,12 +56,19 @@ def test_chat_demo_empty_input_falls_back():
     assert resp.json()["safety_flag"] == "empty_input"
 
 
-def test_chat_demo_rejects_unknown_scene():
-    resp = client.post(
-        "/v1/chat/demo",
-        json={"user_text": "hi", "scene": "not_a_real_scene"},
-    )
-    assert resp.status_code == 422
+def test_chat_demo_tolerates_legacy_scene_field():
+    """[2026-08-03] 场景分类已移除，但线上老客户端(尤其 Unity)仍会回传 scene。
+
+    收下即丢弃，绝不能 422——那会让还没更新的 Unity 客户端整个挂掉。
+    任意取值都要放行，包括原先合法的和从来没有过的。
+    """
+    for value in ("late_night", "not_a_real_scene", "", None):
+        resp = client.post(
+            "/v1/chat/demo",
+            json={"user_text": "hi", "scene": value},
+        )
+        assert resp.status_code == 200, f"scene={value!r} 应被容忍: {resp.text}"
+        assert "scene" not in resp.json()
 
 
 def test_chat_demo_skips_persistence_when_disabled(
@@ -74,7 +81,6 @@ def test_chat_demo_skips_persistence_when_disabled(
         "/v1/chat/demo",
         json={
             "user_text": "今天有点累",
-            "scene": "stress",
             "external_user_id": "browser-test-user",
         },
     )

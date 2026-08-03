@@ -64,13 +64,11 @@ class ConversationRepository:
         self,
         *,
         user_id: UUID,
-        scene: str | None,
         persona: str = "nini",
     ) -> Conversation:
         """创建会话但不提交事务。"""
         conversation = Conversation(
             user_id=user_id,
-            scene=scene,
             persona=persona,
         )
         self._session.add(conversation)

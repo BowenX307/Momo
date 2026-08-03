@@ -1,7 +1,7 @@
 """DeepSeek provider.
 
 封装规则：
-- 只做"按 scene 拼 prompt + history → 调 DeepSeek /chat/completions → 解析 content → 返回"。
+- 只做"按 persona 拼 prompt + history → 调 DeepSeek /chat/completions → 解析 content → 返回"。
 - 任何失败（超时、网络、非 200、JSON 结构异常）统一抛 `LLMError`，由
   `domain/conversation/service.py` 决定是否降级到 Mock。
 - system prompt 在这里按场景分化，符合仓库红线：
@@ -33,7 +33,6 @@ def _system_prompt_for(persona: str) -> str:
 class DeepSeekProvider:
     async def complete(
         self,
-        scene: str,
         user_text: str,
         history: list[dict] | None = None,
         persona: str = "nini",
@@ -91,7 +90,6 @@ class DeepSeekProvider:
 
     async def stream_complete(
         self,
-        scene: str,
         user_text: str,
         history: list[dict] | None = None,
         persona: str = "nini",
