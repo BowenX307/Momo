@@ -109,6 +109,33 @@ def test_client_ip_falls_back_to_socket_peer() -> None:
     assert client_ip(_FakeRequest()) == "1.2.3.4"
 
 
+def test_client_ip_reads_x_real_ip() -> None:
+    """[2026-08-03] 线上 nginx 的 location /v1/ 只设 X-Real-IP，没设 XFF。
+
+    原先只读 XFF 时这里会一路退到 request.client.host = 127.0.0.1(nginx 自己)，
+    所有用户共用一个桶，IP 那层等于失效。
+    """
+    request = _FakeRequest({"x-real-ip": "203.0.113.9"})
+
+    assert client_ip(request) == "203.0.113.9"
+
+
+def test_client_ip_prefers_real_ip_over_forwarded() -> None:
+    """两个头都在时以 X-Real-IP 为准：它由 nginx 无条件覆盖，客户端伪造不了。"""
+    request = _FakeRequest(
+        {"x-real-ip": "203.0.113.9", "x-forwarded-for": "9.9.9.9, 8.8.8.8"}
+    )
+
+    assert client_ip(request) == "203.0.113.9"
+
+
+def test_client_ip_ignores_blank_real_ip() -> None:
+    """头存在但是空值时不能返回空字符串——那会让所有人落进同一个桶。"""
+    request = _FakeRequest({"x-real-ip": "   ", "x-forwarded-for": "203.0.113.7"})
+
+    assert client_ip(request) == "203.0.113.7"
+
+
 # ── 接口层 ──────────────────────────────────────────────────────────────
 
 

@@ -83,12 +83,22 @@ def client_ip(request: Request) -> str:
     """取调用方 IP。
 
     线上是 nginx 转发,`request.client.host` 拿到的是 nginx 自己的地址,真实 IP 在
-    X-Forwarded-For 里。取**最后一段**而不是第一段:客户端可以伪造整个 XFF 头,nginx
-    是把真实来源追加在末尾的,所以末尾那个才是可信的。
+    转发头里。两个头都认,按可信度排序:
 
-    nginx 若没有配置转发这个头,这里会退回 nginx 的 IP,于是所有用户共用一个桶——
-    IP 那层额度因此取了很大的倍数(见 settings.rate_limit_ip_multiplier 的注释)。
+    1. **X-Real-IP** —— 线上 nginx 实际设置的就是这个(`proxy_set_header X-Real-IP
+       $remote_addr`)。nginx 无条件覆盖,客户端伪造不了,所以最可信,优先用。
+    2. **X-Forwarded-For** —— 取**最后一段**而不是第一段:客户端可以伪造整个 XFF 头,
+       代理是把真实来源追加在末尾的,所以末尾那个才是可信的。留着这条是为了以后前面
+       加 CDN / 负载均衡时不用再改。
+
+    [2026-08-03] 原先只读 XFF。实测线上 nginx 的 `location /v1/` 只设了 X-Real-IP、
+    没设 XFF,于是这里一路退到 `request.client.host` = 127.0.0.1,**所有用户共用一个桶**,
+    IP 那层退化成了一个全局限额。加上 X-Real-IP 后这层才真正按 IP 生效。
     """
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip and real_ip.strip():
+        return real_ip.strip()
+
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
         parts = [p.strip() for p in forwarded.split(",") if p.strip()]
