@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { VoiceInputButton } from "@/app/demo/_components/VoiceInputButton";
+import { VoiceInputButton } from "@/app/_shared/VoiceInputButton";
 import {
   createFeedback,
   createTodo,

@@ -10,7 +10,6 @@ import { useState } from "react";
 import Link from "next/link";
 
 const LINKS: { label: string; href: string }[] = [
-  { label: "体验 Demo", href: "/demo" },
   { label: "关于于你", href: "#" },
   { label: "功能特性", href: "#" },
   { label: "团队", href: "#" },
