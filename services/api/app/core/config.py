@@ -63,10 +63,16 @@ class Settings(BaseSettings):
     rate_limit_verify_code_per_minute: int = 10  # 配合下面的尝试上限一起挡暴力破解
 
     # 按身份限流之外再按 IP 兜一层,倍数放大——因为 external_user_id 是客户端自己生成的,
-    # 换一个就能绕过按身份的额度。倍数取大是刻意的:线上 nginx 是否转发真实 IP 尚未确认,
-    # 若没转发则所有用户在后端看来是同一个 IP、共用这一份额度,额度太小会误伤所有人。
-    # 确认 nginx 有传 X-Forwarded-For 之后,这个倍数应当调小才真正有效。
-    rate_limit_ip_multiplier: int = 10
+    # 换一个就能绕过按身份的额度。
+    #
+    # [2026-08-03] 已确认线上 nginx 传的是 X-Real-IP(不是 XFF),deps.client_ip 现在两个
+    # 头都认,这层才真正按 IP 生效。倍数从 10 降到 4:10 是"万一所有人共用一个桶别误伤"的
+    # 保守值,既然 IP 已经分得开就不需要那么松了。
+    #
+    # 4 的含义:同一个出口 IP 下允许约 4 个人同时正常使用(家庭/宿舍 WiFi、公司 NAT 都够),
+    # 但挡得住单机换 external_user_id 刷额度。⚠️ 学校/大企业这种几百人共用一个出口 IP 的
+    # 场景会误伤——日志里 rate_limited 若集中在同一个 IP 且都是真实用户,调大这个值。
+    rate_limit_ip_multiplier: int = 4
 
     # 验证码最多能猜错几次,超过即作废、必须重新发送。
     # 原先完全不限次数:6 位码 100 万种组合、5 分钟有效期、接口又无限流,
