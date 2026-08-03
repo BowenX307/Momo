@@ -19,16 +19,36 @@ _DEFAULT_RATE = -8  # range [-50, 100]
 
 # 按人格覆盖 音色 / 资源版本 / 语速。未列出的人格用全局 settings.doubao_tts_voice
 # + 默认 _RESOURCE_ID + _DEFAULT_RATE。
-# youyou（优优）= 高洞察力·有点毒嘴的老朋友 → 邻家女孩（亲切熟人感，seed-tts-1.0，
-#         2026-07-17 女声批试音选定，替换京腔侃爷；产品对男声方向整体不满意）。
+#
+# [2026-08-03] 两个人格都换成「角色扮演」(ICL_ 前缀)系列,产品点名要的高级音色。
+# ⚠️ ICL_ 系列必须配 resource_id="seed-tts-2.0"。用 seed-tts-1.0 会报
+#    `app key not found in header or query`——这个报错极具误导性,曾让我们误判成
+#    "整个音色分类没开通、需要在火山引擎控制台单独建应用拿 App ID"。实际上现有的
+#    DOUBAO_TTS_API_KEY 就够用,只是 resource_id 配错了。用 volc.service_type.10029
+#    则报 `resource ID is mismatched with speaker related resource`(这个提示才准确)。
+#
+# 两个都显式写 pitch=0 和 natural_pauses=False,不是可省略的默认值:
+#   pitch 全局是 -2(降调),不写会让线上听感和试音样本不一致;
+#   natural_pauses 默认 True 会插 300ms SSML 停顿,试音样本是纯文本没有停顿。
+# 试音样本(桌面 优优妮妮高级音色试听0803/)就是按 rate=0 / pitch=0 / 无停顿生成的,
+# 产品据此定档,所以线上必须保持同样的参数组合。
 _PERSONA_VOICE_OVERRIDES: dict[str, dict[str, object]] = {
+    # youyou（优优）= 高洞察力·有点毒嘴的老朋友 → 假小子（中性偏飒,配毒舌人设）
+    # 历史:少年梓辛(男)→ 京腔侃爷(男,只上线一天)→ 邻家女孩(seed-tts-1.0,rate+6)→ 假小子
     "youyou": {
-        "speaker": "zh_female_linjianvhai_moon_bigtts",
-        "resource_id": "seed-tts-1.0",
-        "speech_rate": 6,  # 0→+2→+3→+5→+6(2026-07-17 按线上实听逐步调快。API 只收整数)
-        "pitch": 0.0,  # 全局 -2 降调不适用,保持原声(试音样本就是原声)
-        # 300ms 逗号停顿是给旧全局慢速音色(小何,rate -8)调的;邻家女孩 +5 语速下
-        # 固定长停顿听感突兀(2026-07-17 A/B/C 对照后决定关掉,靠原声语感断句)。
+        "speaker": "ICL_uranus_zh_female_jiaxiaozi_tob",
+        "resource_id": "seed-tts-2.0",
+        "speech_rate": 0,  # 2026-08-03 产品试听 0 / +5 两档后定 0
+        "pitch": 0.0,
+        "natural_pauses": False,
+    },
+    # nini（妮妮）= 温柔知性的小精灵 → 活泼刁蛮
+    # 之前没有 override,吃的是全局默认(小何 + rate -8 + pitch -2 + 有停顿)。
+    "nini": {
+        "speaker": "ICL_uranus_zh_female_huopodiaoman_tob",
+        "resource_id": "seed-tts-2.0",
+        "speech_rate": 0,
+        "pitch": 0.0,
         "natural_pauses": False,
     },
 }
