@@ -30,7 +30,9 @@ class User(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     external_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
-    phone_number: Mapped[str | None] = mapped_column(String(20), unique=True, index=True)
+    phone_number: Mapped[str | None] = mapped_column(
+        String(20), unique=True, index=True
+    )
     # argon2 哈希串（自带盐和参数）。为空表示这个用户还没设过密码，只能用验证码登录。
     password_hash: Mapped[str | None] = mapped_column(String(255))
     data_consent: Mapped[bool] = mapped_column(
@@ -63,6 +65,30 @@ class Conversation(Base):
     """属于某位用户的一次聊天会话。"""
 
     __tablename__ = "conversations"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'closed', 'pending_delete')",
+            name="ck_conversations_status",
+        ),
+        CheckConstraint(
+            "close_reason IS NULL OR "
+            "close_reason IN ('user_end', 'browser_close', 'idle_timeout')",
+            name="ck_conversations_close_reason",
+        ),
+        Index(
+            "ix_conversations_user_status_created_at",
+            "user_id",
+            "status",
+            "created_at",
+        ),
+        Index("ix_conversations_purge_after", "purge_after"),
+        Index(
+            "ux_conversations_user_client_session",
+            "user_id",
+            "client_session_id",
+            unique=True,
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(
@@ -78,6 +104,27 @@ class Conversation(Base):
         nullable=False,
         default="nini",
         server_default="nini",
+    )
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="active",
+        server_default="active",
+    )
+    close_reason: Mapped[str | None] = mapped_column(String(20))
+    client_session_id: Mapped[str | None] = mapped_column(String(64))
+    last_activity_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    purge_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    include_in_memory: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=false(),
     )
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     mood: Mapped[str | None] = mapped_column(String(16))
@@ -99,6 +146,11 @@ class Conversation(Base):
         back_populates="conversation",
         cascade="all, delete-orphan",
         order_by="Message.created_at",
+    )
+    memory: Mapped[ConversationMemory | None] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        uselist=False,
     )
 
 
@@ -154,6 +206,57 @@ class Message(Base):
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
 
 
+class ConversationMemory(Base):
+    """用户主动选择某轮后生成的长期记忆摘要。"""
+
+    __tablename__ = "conversation_memories"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'ready', 'failed', 'stale')",
+            name="ck_conversation_memories_status",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    conversation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    summary: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
+    status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="pending",
+        server_default="pending",
+    )
+    model: Mapped[str | None] = mapped_column(String(64))
+    prompt_version: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="v1",
+        server_default="v1",
+    )
+    source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    conversation: Mapped[Conversation] = relationship(back_populates="memory")
+
+
 class TodoItem(Base):
     """内部工作看板的待办项，供产品/设计/商业查看 IT 现阶段进度。"""
 
@@ -167,7 +270,9 @@ class TodoItem(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
-    detail: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    detail: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
     status: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
@@ -204,7 +309,9 @@ class FeedbackItem(Base):
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    author_name: Mapped[str] = mapped_column(String(64), nullable=False, default="", server_default="")
+    author_name: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="", server_default=""
+    )
     kind: Mapped[str] = mapped_column(
         String(16),
         nullable=False,

@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.domain.aftercare.schemas import AftercareRequest, AftercareResponse, Mood
 from app.domain.safety import check as safety_check
-from app.infra.repositories import ConversationRepository, UserRepository
+from app.infra.repositories import ConversationRepository
 
 # ── 12 类场景 → 正面照片情绪档 ────────────────────────────────────────────
 # 陪伴型/协助型 → calm;轻度吐槽/压力过载/关系困扰 → anxious;
@@ -161,7 +161,10 @@ def _parse(content: str) -> AftercareResponse | None:
         # 场景键不合法但信写出来了:信照用,照片落 calm
         scene, mood = "", "calm"
     return AftercareResponse(
-        mood=mood, quote=letter.strip(), letter=letter.strip(), scene=scene or "",
+        mood=mood,
+        quote=letter.strip(),
+        letter=letter.strip(),
+        scene=scene or "",
         is_mock=False,
     )
 
@@ -179,8 +182,11 @@ async def generate_aftercare(request: AftercareRequest) -> AftercareResponse:
     for m in request.history:
         if m.role == "user" and safety_check(m.content).reason == "crisis_keyword":
             return AftercareResponse(
-                mood="down", quote=_SAFETY_LETTER, letter=_SAFETY_LETTER,
-                scene="safety_override", is_mock=False,
+                mood="down",
+                quote=_SAFETY_LETTER,
+                letter=_SAFETY_LETTER,
+                scene="safety_override",
+                is_mock=False,
             )
 
     if not settings.deepseek_api_key:
@@ -192,7 +198,10 @@ async def generate_aftercare(request: AftercareRequest) -> AftercareResponse:
     )
     messages = [
         {"role": "system", "content": system},
-        {"role": "user", "content": f"这是刚才的完整对话:\n{convo}\n\n请阅读后输出 JSON。"},
+        {
+            "role": "user",
+            "content": f"这是刚才的完整对话:\n{convo}\n\n请阅读后输出 JSON。",
+        },
     ]
     payload = {
         "model": settings.deepseek_model,
@@ -224,7 +233,7 @@ async def archive_round(
     session: AsyncSession,
     *,
     conversation_id: UUID,
-    external_user_id: str,
+    user_id: UUID,
     result: AftercareResponse,
 ) -> None:
     """把这轮的拍立得结果写回 conversation(ended_at/mood/letter),供"查看历史轮次"用。
@@ -232,15 +241,14 @@ async def archive_round(
     找不到用户/会话,或写入失败,都静默跳过——不影响拍立得本身已经生成并返回给前端。
     """
     try:
-        user = await UserRepository(session).get_by_external_id(external_user_id)
-        if user is None:
-            return
         conversation = await ConversationRepository(session).get_for_user(
-            conversation_id, user.id
+            conversation_id, user_id
         )
         if conversation is None:
             return
         conversation.ended_at = datetime.now(UTC)
+        conversation.status = "closed"
+        conversation.close_reason = "user_end"
         conversation.mood = result.mood
         conversation.letter = result.letter
         await session.commit()

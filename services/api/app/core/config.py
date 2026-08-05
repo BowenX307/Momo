@@ -163,6 +163,13 @@ class Settings(BaseSettings):
     # 登录态 token(服务端存储的随机字符串,不是 JWT,方便主动撤销)
     auth_token_ttl_days: int = 30
 
+    # 登录用户的历史与记忆
+    free_conversation_limit: int = 7
+    conversation_idle_timeout_minutes: int = 30
+    conversation_maintenance_interval_seconds: int = 60
+    conversation_delete_retention_days: int = 15
+    memory_prompt_version: str = "v1"
+
     model_config = SettingsConfigDict(
         env_file=_ENV_FILE,
         env_file_encoding="utf-8",

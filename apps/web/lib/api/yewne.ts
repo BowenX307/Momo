@@ -6,6 +6,8 @@
  * 并把仓库正式改造成 pnpm workspace（届时本文件类型导入即可）。
  */
 
+import { getAuthToken } from "@/lib/session/authToken";
+
 export const PERSONAS = ["youyou", "nini"] as const;
 export type Persona = (typeof PERSONAS)[number];
 
@@ -100,6 +102,14 @@ export class YewneApiError extends Error {
   }
 }
 
+function requestHeaders(json = false): HeadersInit {
+  const headers: Record<string, string> = {};
+  if (json) headers["Content-Type"] = "application/json";
+  const token = getAuthToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
 /** 调用 /v1/chat/demo。失败抛 YewneApiError，调用方决定如何在 UI 表达。 */
 export async function fetchChatDemo(
   payload: ChatDemoRequest,
@@ -110,7 +120,7 @@ export async function fetchChatDemo(
   try {
     res = await fetch(`${base}/v1/chat/demo`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: requestHeaders(true),
       body: JSON.stringify(payload),
       signal: options.signal,
     });
@@ -163,7 +173,7 @@ export async function fetchAftercare(
   const base = options.baseUrl ?? API_BASE;
   const res = await fetch(`${base}/v1/aftercare/generate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(true),
     body: JSON.stringify(payload),
     signal: options.signal,
   });
@@ -276,7 +286,7 @@ export async function fetchChatDemoStream(
   try {
     res = await fetch(`${base}/v1/chat/demo/stream`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: requestHeaders(true),
       body: JSON.stringify(payload),
       signal: options.signal,
     });
@@ -327,19 +337,35 @@ export async function fetchHealth(
   }
 }
 
+/** 后端保存的会话记忆摘要状态。 */
+export type MemoryStatus = "pending" | "ready" | "failed" | "stale";
+
 export interface RoundSummary {
   conversation_id: string;
   persona: Persona;
   mood?: AftercareMood | null;
   letter?: string | null;
+  status: "active" | "closed" | "pending_delete";
+  close_reason?: "user_end" | "browser_close" | "idle_timeout" | null;
+  include_in_memory: boolean;
+  /** null 表示该会话从未生成过记忆摘要。 */
+  memory_status: MemoryStatus | null;
   created_at: string;
-  ended_at: string;
+  ended_at?: string | null;
+  deleted_at?: string | null;
+  purge_after?: string | null;
 }
 
 export interface RoundMessage {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+}
+
+export interface MemorySelectionResponse {
+  conversation_id: string;
+  include_in_memory: boolean;
+  memory_status: MemoryStatus | null;
 }
 
 /** 调 /v1/conversation/rounds：列出该用户已结束归档的历史轮次，最新在前。 */
@@ -349,7 +375,10 @@ export async function fetchRounds(
 ): Promise<RoundSummary[]> {
   const base = options.baseUrl ?? API_BASE;
   const url = `${base}/v1/conversation/rounds?external_user_id=${encodeURIComponent(externalUserId)}`;
-  const res = await fetch(url, { signal: options.signal });
+  const res = await fetch(url, {
+    headers: requestHeaders(),
+    signal: options.signal,
+  });
   if (!res.ok) throw new YewneApiError(`HTTP ${res.status}`, res.status);
   return (await res.json()) as RoundSummary[];
 }
@@ -362,9 +391,51 @@ export async function fetchRoundMessages(
 ): Promise<RoundMessage[]> {
   const base = options.baseUrl ?? API_BASE;
   const url = `${base}/v1/conversation/rounds/${conversationId}/messages?external_user_id=${encodeURIComponent(externalUserId)}`;
-  const res = await fetch(url, { signal: options.signal });
+  const res = await fetch(
+    url,
+    {
+      headers: requestHeaders(),
+      signal: options.signal,
+    },
+  );
   if (!res.ok) throw new YewneApiError(`HTTP ${res.status}`, res.status);
   return (await res.json()) as RoundMessage[];
+}
+
+/**
+ * 开启或关闭某一轮对话的记忆。
+ *
+ * 仅登录且已同意数据协议的会话可调用，目标轮次必须已经结束。开启时后端会等待
+ * 摘要生成完成，因此请求可能持续数秒；失败状态通过 memory_status="failed" 返回。
+ * 401/403/404/409 等 HTTP 错误会抛出 YewneApiError，响应正文保存在 error.body。
+ */
+export async function updateRoundMemory(
+  conversationId: string,
+  enabled: boolean,
+  options: { signal?: AbortSignal; baseUrl?: string } = {},
+): Promise<MemorySelectionResponse> {
+  const base = options.baseUrl ?? API_BASE;
+  const res = await fetch(
+    `${base}/v1/conversation/rounds/${conversationId}/memory`,
+    {
+      method: "PATCH",
+      headers: requestHeaders(true),
+      body: JSON.stringify({ enabled }),
+      signal: options.signal,
+    },
+  );
+
+  if (!res.ok) {
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      body = await res.text().catch(() => undefined);
+    }
+    throw new YewneApiError(`HTTP ${res.status}`, res.status, body);
+  }
+
+  return (await res.json()) as MemorySelectionResponse;
 }
 
 export interface SendCodeResponse {
@@ -526,6 +597,50 @@ export async function fetchResetPassword(
     },
     options,
   );
+}
+
+export interface ImportConversationResponse {
+  conversation_id: string;
+}
+
+/** 首次登录后，把浏览器里正在进行的游客会话自动绑定到账号。 */
+export async function fetchImportCurrentConversation(
+  payload: {
+    client_session_id: string;
+    persona: Persona;
+    messages: HistoryMessage[];
+  },
+  options: { signal?: AbortSignal; baseUrl?: string } = {},
+): Promise<ImportConversationResponse> {
+  const base = options.baseUrl ?? API_BASE;
+  const res = await fetch(`${base}/v1/conversation/import-current`, {
+    method: "POST",
+    headers: requestHeaders(true),
+    body: JSON.stringify(payload),
+    signal: options.signal,
+  });
+  if (!res.ok) throw new YewneApiError(`HTTP ${res.status}`, res.status);
+  return (await res.json()) as ImportConversationResponse;
+}
+
+/** 页面关闭时尽力通知后端；失败时还有30分钟无活动兜底。 */
+export async function fetchCloseConversation(
+  conversationId: string,
+  reason: "user_end" | "browser_close",
+  options: {
+    signal?: AbortSignal;
+    baseUrl?: string;
+    keepalive?: boolean;
+  } = {},
+): Promise<void> {
+  const base = options.baseUrl ?? API_BASE;
+  await fetch(`${base}/v1/conversation/rounds/${conversationId}/close`, {
+    method: "POST",
+    headers: requestHeaders(true),
+    body: JSON.stringify({ reason }),
+    signal: options.signal,
+    keepalive: options.keepalive,
+  });
 }
 
 /** 调 /v1/auth/logout。 */

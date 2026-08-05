@@ -39,6 +39,7 @@ class LLMProvider(Protocol):
         user_text: str,
         history: list[dict] | None = None,
         persona: str = "nini",
+        memory_context: str = "",
     ) -> str: ...
 
 
@@ -55,6 +56,7 @@ class MockProvider:
         user_text: str,
         history: list[dict] | None = None,
         persona: str = "nini",
+        memory_context: str = "",
     ) -> str:
         template = self._DEFAULT_TEMPLATE
         echo = f"你说「{user_text.strip()[:40]}」，" if user_text.strip() else ""

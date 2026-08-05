@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import RedisDep, enforce_rate_limit
+from app.api.dependencies import OptionalCurrentUser
 from app.core.config import settings
 from app.domain.aftercare.schemas import AftercareRequest, AftercareResponse
 from app.domain.aftercare.service import archive_round, generate_aftercare
@@ -25,6 +26,7 @@ async def aftercare_generate(
     session: DatabaseSession,
     http_request: Request,
     redis: RedisDep,
+    user: OptionalCurrentUser,
 ) -> AftercareResponse:
     await enforce_rate_limit(
         http_request,
@@ -34,11 +36,16 @@ async def aftercare_generate(
         identity=request.external_user_id,
     )
     result = await generate_aftercare(request)
-    if settings.persistence_enabled and request.conversation_id and request.external_user_id:
+    if (
+        settings.persistence_enabled
+        and user is not None
+        and user.data_consent
+        and request.conversation_id
+    ):
         await archive_round(
             session,
             conversation_id=request.conversation_id,
-            external_user_id=request.external_user_id,
+            user_id=user.id,
             result=result,
         )
     return result

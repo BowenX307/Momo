@@ -21,6 +21,7 @@ class _FakeOkProvider:
         user_text: str,
         history: list[dict] | None = None,
         persona: str = "nini",
+        memory_context: str = "",
     ) -> str:
         return f"fake-reply: {user_text}"
 
@@ -35,6 +36,7 @@ class _FakeFailingProvider:
         user_text: str,
         history: list[dict] | None = None,
         persona: str = "nini",
+        memory_context: str = "",
     ) -> str:
         raise LLMError(self.code, "boom", upstream_status=self.status)
 
@@ -52,7 +54,6 @@ class _FakePersistence:
     async def save_exchange(
         self,
         *,
-        external_user_id: str,
         conversation_id: UUID | None,
         persona: str,
         user_text: str,
@@ -65,7 +66,6 @@ class _FakePersistence:
     ) -> UUID:
         self.calls.append(
             {
-                "external_user_id": external_user_id,
                 "conversation_id": conversation_id,
                 "persona": persona,
                 "user_text": user_text,

@@ -132,12 +132,11 @@ async def _persist_exchange_safe(
     degraded: bool,
 ) -> UUID | None:
     """保存一轮对话；数据库异常只记录日志，不中断用户回复。"""
-    if persistence is None or request.external_user_id is None:
+    if persistence is None:
         return request.conversation_id
 
     try:
         return await persistence.save_exchange(
-            external_user_id=request.external_user_id,
             conversation_id=request.conversation_id,
             persona=request.persona.value,
             user_text=request.user_text,
@@ -165,6 +164,7 @@ async def handle_chat_demo(
     tts_provider: TTSProvider | None = None,
     tts_is_mock: bool = True,
     persistence: ConversationPersistence | None = None,
+    memory_context: str = "",
 ) -> ChatDemoResponse:
     """处理一次 demo 对话。
 
@@ -220,6 +220,7 @@ async def handle_chat_demo(
                 user_text=request.user_text,
                 history=history,
                 persona=request.persona.value,
+                memory_context=memory_context,
             ),
             _detect_emotion_safe(request.user_text, provider),
         )
@@ -278,6 +279,7 @@ async def handle_chat_demo(
             user_text=request.user_text,
             history=history,
             persona=request.persona.value,
+            memory_context=memory_context,
         )
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
         if tts_provider:
@@ -339,6 +341,7 @@ async def stream_chat_demo(
     tts_is_mock: bool,
     is_mock: bool,
     persistence: ConversationPersistence | None = None,
+    memory_context: str = "",
 ) -> AsyncGenerator[str, None]:
     """流式版本：LLM 逐句输出，每句完成立刻 TTS，以 SSE data 行 yield。"""
     request_id = uuid4().hex
@@ -412,6 +415,7 @@ async def stream_chat_demo(
             user_text=request.user_text,
             history=history,
             persona=request.persona.value,
+            memory_context=memory_context,
         )
         async for sentence in _iter_sentences(token_stream):
             full_reply += sentence
@@ -447,12 +451,14 @@ async def stream_chat_demo(
                 user_text=request.user_text,
                 history=history,
                 persona=request.persona.value,
+                memory_context=memory_context,
             )
         except LLMError:
             full_reply = await MockProvider().complete(
                 user_text=request.user_text,
                 history=history,
                 persona=request.persona.value,
+                memory_context=memory_context,
             )
             response_is_mock = True
             degraded = True

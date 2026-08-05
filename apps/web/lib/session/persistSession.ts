@@ -3,6 +3,7 @@ import type { HistoryMessage, Persona } from "@/lib/api/yewne";
 // 会话按人格分键存储，切换人格时各自保留历史。
 const KEY_PREFIX = "yewne:session:";
 const CONVERSATION_KEY_PREFIX = "yewne:active-conversation:";
+const CLIENT_SESSION_KEY_PREFIX = "yewne:client-session:";
 const USER_ID_KEY = "yewne:external-user-id";
 const TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_MSG_LEN = 2000;
@@ -13,6 +14,24 @@ function keyFor(persona: Persona): string {
 
 function conversationKeyFor(persona: Persona): string {
   return `${CONVERSATION_KEY_PREFIX}${persona}`;
+}
+
+function clientSessionKeyFor(persona: Persona): string {
+  return `${CLIENT_SESSION_KEY_PREFIX}${persona}`;
+}
+
+export function getOrCreateClientSessionId(persona: Persona): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const key = clientSessionKeyFor(persona);
+    const existing = sessionStorage.getItem(key);
+    if (existing) return existing;
+    const generated = crypto.randomUUID();
+    sessionStorage.setItem(key, generated);
+    return generated;
+  } catch {
+    return crypto.randomUUID();
+  }
 }
 
 function getActiveConversationId(persona: Persona): string | null {
@@ -128,6 +147,11 @@ export function clearSession(persona: Persona): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(keyFor(persona));
   setActiveConversationId(persona, null);
+  try {
+    sessionStorage.removeItem(clientSessionKeyFor(persona));
+  } catch {
+    // ignore
+  }
 }
 
 export function formatRelativeTime(savedAt: number): string {

@@ -1,5 +1,6 @@
 """FastAPI 应用入口"""
 
+import asyncio
 from contextlib import asynccontextmanager
 
 import structlog
@@ -9,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import router as v1_router
 from app.core.config import settings
 from app.infra.database import check_database_connection
+from app.infra.conversation_maintenance import conversation_maintenance_loop
 from app.llm.factory import get_llm_provider
 from app.stt.factory import get_stt_provider
 from app.tts.factory import get_tts_provider
@@ -20,8 +22,18 @@ logger = structlog.get_logger()
 async def lifespan(app: FastAPI):
     """应用启动/关闭时的钩子"""
     logger.info("yewne_api_starting", env=settings.env)
-    yield
-    logger.info("yewne_api_stopping")
+    maintenance_task = (
+        asyncio.create_task(conversation_maintenance_loop())
+        if settings.persistence_enabled
+        else None
+    )
+    try:
+        yield
+    finally:
+        if maintenance_task is not None:
+            maintenance_task.cancel()
+            await asyncio.gather(maintenance_task, return_exceptions=True)
+        logger.info("yewne_api_stopping")
 
 
 app = FastAPI(

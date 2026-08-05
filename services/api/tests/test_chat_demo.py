@@ -87,3 +87,22 @@ def test_chat_demo_skips_persistence_when_disabled(
 
     assert resp.status_code == 200
     assert resp.json()["conversation_id"] is None
+
+
+def test_guest_chat_never_persists_even_with_external_user_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """开启数据库后，未登录游客仍然只在浏览器保存。"""
+    monkeypatch.setattr(settings, "persistence_enabled", True)
+
+    resp = client.post(
+        "/v1/chat/demo",
+        json={
+            "user_text": "游客也可以聊",
+            "scene": "loneliness",
+            "external_user_id": "browser-test-user",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["conversation_id"] is None

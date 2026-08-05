@@ -10,7 +10,9 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import RedisDep, enforce_rate_limit
+from app.api.dependencies import OptionalCurrentUser
 from app.core.config import settings
+from app.domain.conversation.memory_service import get_memory_context
 from app.domain.conversation.schemas import ChatDemoRequest, ChatDemoResponse
 from app.domain.conversation.service import handle_chat_demo, stream_chat_demo
 from app.domain.safety.factory import get_safety_provider
@@ -24,13 +26,13 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
 
 
 def _get_persistence(
-    request: ChatDemoRequest,
     session: AsyncSession,
+    user: OptionalCurrentUser,
 ) -> PostgresConversationPersistence | None:
-    """仅在配置开启且请求带匿名用户 ID 时启用 PostgreSQL 持久化。"""
-    if not settings.persistence_enabled or not request.external_user_id:
+    """只有已登录并授权的用户才启用 PostgreSQL 持久化。"""
+    if not settings.persistence_enabled or user is None or not user.data_consent:
         return None
-    return PostgresConversationPersistence(session)
+    return PostgresConversationPersistence(session, user_id=user.id)
 
 
 @router.post("/demo", response_model=ChatDemoResponse)
@@ -39,6 +41,7 @@ async def chat_demo(
     session: DatabaseSession,
     http_request: Request,
     redis: RedisDep,
+    user: OptionalCurrentUser,
 ) -> ChatDemoResponse:
     await enforce_rate_limit(
         http_request,
@@ -50,7 +53,12 @@ async def chat_demo(
     safety_provider, _ = get_safety_provider()
     provider, is_mock = get_llm_provider()
     tts_provider, tts_is_mock = get_tts_provider()
-    persistence = _get_persistence(request, session)
+    persistence = _get_persistence(session, user)
+    memory_context = (
+        await get_memory_context(session, user.id)
+        if user is not None and user.data_consent
+        else ""
+    )
     return await handle_chat_demo(
         request,
         safety_provider=safety_provider,
@@ -59,6 +67,7 @@ async def chat_demo(
         tts_provider=tts_provider,
         tts_is_mock=tts_is_mock,
         persistence=persistence,
+        memory_context=memory_context,
     )
 
 
@@ -68,6 +77,7 @@ async def chat_demo_stream(
     session: DatabaseSession,
     http_request: Request,
     redis: RedisDep,
+    user: OptionalCurrentUser,
 ) -> StreamingResponse:
     await enforce_rate_limit(
         http_request,
@@ -79,7 +89,12 @@ async def chat_demo_stream(
     safety_provider, _ = get_safety_provider()
     provider, is_mock = get_llm_provider()
     tts_provider, tts_is_mock = get_tts_provider()
-    persistence = _get_persistence(request, session)
+    persistence = _get_persistence(session, user)
+    memory_context = (
+        await get_memory_context(session, user.id)
+        if user is not None and user.data_consent
+        else ""
+    )
     return StreamingResponse(
         stream_chat_demo(
             request,
@@ -89,6 +104,7 @@ async def chat_demo_stream(
             tts_is_mock=tts_is_mock,
             is_mock=is_mock,
             persistence=persistence,
+            memory_context=memory_context,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

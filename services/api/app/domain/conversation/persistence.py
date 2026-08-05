@@ -12,7 +12,6 @@ class ConversationPersistence(Protocol):
     async def save_exchange(
         self,
         *,
-        external_user_id: str,
         conversation_id: UUID | None,
         persona: str,
         user_text: str,

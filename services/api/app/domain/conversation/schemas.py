@@ -129,8 +129,17 @@ class RoundSummary(BaseModel):
     persona: Persona
     mood: str | None = Field(default=None, description="结束时生成的拍立得情绪档")
     letter: str | None = Field(default=None, description="结束时生成的拍立得回信正文")
+    status: Literal["active", "closed", "pending_delete"]
+    close_reason: str | None = None
+    include_in_memory: bool = False
+    memory_status: Literal["pending", "ready", "failed", "stale"] | None = Field(
+        default=None,
+        description="记忆摘要状态；null 表示尚未生成过摘要",
+    )
     created_at: str = Field(description="轮次开始时间，ISO 8601")
-    ended_at: str = Field(description="轮次结束时间，ISO 8601")
+    ended_at: str | None = Field(default=None, description="轮次结束时间，ISO 8601")
+    deleted_at: str | None = Field(default=None, description="进入回收站的时间")
+    purge_after: str | None = Field(default=None, description="预计永久删除时间")
 
 
 class RoundMessage(BaseModel):
@@ -139,3 +148,29 @@ class RoundMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     created_at: str = Field(description="ISO 8601")
+
+
+class ImportConversationRequest(BaseModel):
+    """游客第一次登录后上传当前浏览器会话。"""
+
+    client_session_id: str = Field(..., min_length=1, max_length=64)
+    persona: Persona = Persona.NINI
+    messages: list[HistoryMessage] = Field(..., min_length=1, max_length=100)
+
+
+class ImportConversationResponse(BaseModel):
+    conversation_id: UUID
+
+
+class CloseConversationRequest(BaseModel):
+    reason: Literal["user_end", "browser_close"] = "user_end"
+
+
+class MemorySelectionRequest(BaseModel):
+    enabled: bool
+
+
+class MemorySelectionResponse(BaseModel):
+    conversation_id: UUID
+    include_in_memory: bool
+    memory_status: Literal["pending", "ready", "failed", "stale"] | None = None

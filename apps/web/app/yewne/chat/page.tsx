@@ -15,7 +15,9 @@ import Image from "next/image";
 
 import {
   fetchAftercare,
+  fetchCloseConversation,
   fetchChatDemoStream,
+  fetchImportCurrentConversation,
   fetchMe,
   fetchLogout,
   fetchRoundMessages,
@@ -37,6 +39,7 @@ import {
 } from "@/lib/speech/playYewneSpeech";
 import {
   clearSession,
+  getOrCreateClientSessionId,
   getOrCreateExternalUserId,
   loadSession,
   saveSession,
@@ -326,6 +329,8 @@ export default function YewneChatPage() {
         if (me) {
           setLoggedInPhone(me.phone_number ?? getStoredPhoneNumber());
           setHasPassword(me.has_password ?? false);
+          setExternalUserId(me.external_user_id);
+          externalUserIdRef.current = me.external_user_id;
         } else {
           clearAuthToken();
         }
@@ -339,6 +344,17 @@ export default function YewneChatPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!conversationId || !getAuthToken()) return;
+    const closeOnPageHide = () => {
+      void fetchCloseConversation(conversationId, "browser_close", {
+        keepalive: true,
+      });
+    };
+    window.addEventListener("pagehide", closeOnPageHide);
+    return () => window.removeEventListener("pagehide", closeOnPageHide);
+  }, [conversationId]);
 
   // focus 对话模式打开时,内容变化自动滚到底
   useEffect(() => {
@@ -390,9 +406,8 @@ export default function YewneChatPage() {
     }
   }
 
-  // 登录成功:存 token;如果后端认的是老账号(external_id 变了),当前这轮匿名聊天
-  // 没法接上老账号的历史(那些历史只能在"往期"里回看),所以清空本地状态重新开始。
-  function handleLoginSuccess(result: {
+  // 登录成功后存 token，并把当前游客会话自动导入后端认定的账号。
+  async function handleLoginSuccess(result: {
     token: string;
     externalUserId: string;
     phoneNumber: string;
@@ -404,15 +419,29 @@ export default function YewneChatPage() {
     // 验证码登录时前端并不知道这个账号有没有密码,问一下后端。
     void fetchMe(result.token).then((me) => setHasPassword(me?.has_password ?? false));
 
-    if (result.externalUserId !== externalUserIdRef.current) {
-      setExternalUserId(result.externalUserId);
-      externalUserIdRef.current = result.externalUserId;
-      clearSession(persona);
-      setHistory([]);
-      setTurns([]);
-      setConversationId(null);
-      setReply(PERSONA_GREETINGS[persona]);
-      setReplyKey((k) => k + 1);
+    setExternalUserId(result.externalUserId);
+    externalUserIdRef.current = result.externalUserId;
+
+    if (turns.length > 0) {
+      const messages: HistoryMessage[] = turns.flatMap((turn) => [
+        { role: "user" as const, content: turn.userText },
+        { role: "assistant" as const, content: turn.reply },
+      ]);
+      try {
+        const imported = await fetchImportCurrentConversation({
+          client_session_id: getOrCreateClientSessionId(persona),
+          persona,
+          messages,
+        });
+        setConversationId(imported.conversation_id);
+        saveSession(persona, {
+          history,
+          conversationId: imported.conversation_id,
+          turns,
+        });
+      } catch {
+        // 登录不因游客会话导入失败而失效；当前内容仍保留在浏览器。
+      }
     }
   }
 
@@ -855,7 +884,11 @@ export default function YewneChatPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void handleOpenRounds()}
+                    onClick={() =>
+                      loggedInPhone
+                        ? void handleOpenRounds()
+                        : setShowLogin(true)
+                    }
                     aria-label="往期"
                     className="flex h-9 w-9 shrink-0 items-center justify-center text-[#504437]/70 transition-colors hover:text-[#d66e76]"
                   >
@@ -1082,7 +1115,7 @@ export default function YewneChatPage() {
                       >
                         <div className="flex items-center justify-between gap-3">
                           <span className="font-hand text-base text-[#504437]">
-                            {new Date(r.ended_at).toLocaleString()}
+                            {new Date(r.ended_at ?? r.created_at).toLocaleString()}
                           </span>
                           <span className="font-kid shrink-0 text-sm text-[#504437]/50">
                             {PERSONA_SIGN[r.persona]}

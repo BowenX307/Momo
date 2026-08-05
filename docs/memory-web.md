@@ -1,137 +1,217 @@
-# 于你 Yewne · Web 记忆设计
+# 于你 Yewne Web 记忆接口说明
 
-## 目标
+本文面向 Web 前端开发，说明如何读取记忆状态、开启或关闭一段会话的记忆，以及后续聊天如何使用记忆。页面布局和具体交互样式由前端决定。
 
-Web 版对话在刷新页面后不丢失上下文。用户回来继续说，于你还记得上一次聊到哪里。
+## 工作流程
 
----
+```text
+用户结束一段登录后的对话
+  -> 会话进入 closed 状态
+  -> 前端读取往期会话及其 memory_status
+  -> 用户主动选择是否记住该会话
+  -> 后端生成并保存摘要
+  -> 后续聊天自动加载已启用且 ready 的摘要
+```
 
-## 现状
+前端不保存摘要，也不需要在聊天请求中传入记忆。后端根据登录 token 自动查找当前用户可用的记忆，并注入模型上下文。
 
-`page.tsx` 里已有 `history` state，每轮把最近 20 条消息传给后端 LLM。  
-问题：纯 React state，刷新即清零。
+## 前端封装
 
----
+所有请求和类型都在：
 
-## 方案：localStorage 持久化
+```text
+apps/web/lib/api/yewne.ts
+```
 
-不需要数据库，不需要用户登录，前端改动约 40 行。
-
-### 存什么
+页面代码应调用这里导出的函数，不要自行拼接接口 URL 或读取登录 token：
 
 ```ts
-interface PersistedSession {
-  history: HistoryMessage[];   // 最近 10 轮对话（20 条消息）
-  scene: Scene | null;         // 已锁定的场景分类
-  turns: ConvTurn[];           // 用于页面气泡展示的对话记录
-  savedAt: number;             // 时间戳，用于过期判断
+import {
+  fetchRounds,
+  updateRoundMemory,
+  YewneApiError,
+  type MemorySelectionResponse,
+  type MemoryStatus,
+  type RoundSummary,
+} from "@/lib/api/yewne";
+```
+
+```ts
+export type MemoryStatus = "pending" | "ready" | "failed" | "stale";
+
+export interface MemorySelectionResponse {
+  conversation_id: string;
+  include_in_memory: boolean;
+  memory_status: MemoryStatus | null;
 }
 ```
 
-key 固定为 `yewne:session`。
+`updateRoundMemory()` 会自动使用 `yewne:auth-token`，添加 `Authorization: Bearer <token>`，并把非 2xx 响应包装为 `YewneApiError`。
 
-### 读写时机
+## 读取往期会话
 
-| 时机 | 操作 |
-|---|---|
-| 页面加载 | 读 localStorage，恢复 history / scene / turns |
-| 每轮对话完成 | 把最新 history 写回 localStorage |
-| 用户手动清空 | 删除 localStorage key，重置所有 state |
-| 距上次对话超过 24h | 自动丢弃（避免带着很久以前的上下文） |
-
-### 容量控制
-
-- 保留最近 **10 轮**（20 条消息）
-- 超出时从头部截断，保留最新的
-- 单条消息过长（> 500 字）时截断存储，避免 localStorage 超限（5MB）
-
----
-
-## 实现位置
-
-所有持久化逻辑封装在一个独立文件：
-
-```
-apps/web/lib/session/persistSession.ts
-```
-
-对外暴露三个函数：
+前端调用：
 
 ```ts
-// 读取，页面加载时调用一次
-function loadSession(): PersistedSession | null
-
-// 写入，每轮对话后调用
-function saveSession(session: PersistedSession): void
-
-// 清空，用户主动重置时调用
-function clearSession(): void
+const rounds = await fetchRounds(externalUserId);
 ```
 
-`page.tsx` 只调用这三个函数，不直接碰 localStorage。
+对应接口：
 
----
+```http
+GET /v1/conversation/rounds?external_user_id={externalUserId}
+Authorization: Bearer <token>
+```
 
-## 过期策略
+每个会话包含：
+
+```json
+{
+  "conversation_id": "6c28eb25-5e7e-48fe-bad3-24780...",
+  "persona": "nini",
+  "status": "closed",
+  "close_reason": "user_end",
+  "include_in_memory": true,
+  "memory_status": "ready",
+  "created_at": "2026-08-05T10:00:00+00:00",
+  "ended_at": "2026-08-05T10:20:00+00:00"
+}
+```
+
+登录请求以 token 对应的用户身份为准。即使查询参数中的 `external_user_id` 与 token 不一致，后端也只返回 token 所属用户的数据。
+
+## 开启或关闭记忆
+
+### 开启
 
 ```ts
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 小时
+const result = await updateRoundMemory(conversationId, true);
+```
 
-function loadSession(): PersistedSession | null {
-  const raw = localStorage.getItem("yewne:session");
-  if (!raw) return null;
-  const session = JSON.parse(raw) as PersistedSession;
-  if (Date.now() - session.savedAt > SESSION_TTL_MS) {
-    localStorage.removeItem("yewne:session");
-    return null;
+### 关闭
+
+```ts
+const result = await updateRoundMemory(conversationId, false);
+```
+
+对应接口：
+
+```http
+PATCH /v1/conversation/rounds/{conversationId}/memory
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "enabled": true
+}
+```
+
+响应示例：
+
+```json
+{
+  "conversation_id": "6c28eb25-5e7e-48fe-bad3-24780...",
+  "include_in_memory": true,
+  "memory_status": "ready"
+}
+```
+
+当前摘要生成在 PATCH 请求内同步完成，请求可能持续数秒。前端应防止同一会话被重复提交，并支持通过 `AbortSignal` 取消本地等待：
+
+```ts
+const controller = new AbortController();
+
+await updateRoundMemory(conversationId, true, {
+  signal: controller.signal,
+});
+```
+
+取消浏览器请求不保证服务端同时终止摘要生成，之后应重新调用 `fetchRounds()` 获取服务端最终状态。
+
+## 状态含义
+
+| `include_in_memory` | `memory_status` | 含义 |
+|---|---|---|
+| `false` | `null` | 从未生成过摘要 |
+| `true` | `pending` | 正在生成摘要，暂时不会注入聊天 |
+| `true` | `ready` | 摘要可用，后续聊天会自动使用 |
+| `true` | `failed` | 摘要生成失败，不会注入聊天；可再次开启重试 |
+| `true` | `stale` | 预留状态：原会话内容变化后，摘要需要重新生成 |
+| `false` | `ready` | 摘要仍保留，但已停用，不会注入聊天 |
+
+关闭记忆只会把 `include_in_memory` 改为 `false`，不会删除已经生成的摘要。再次开启时，如果摘要仍然有效，后端会直接复用。
+
+只有同时满足以下条件的摘要才会进入后续聊天：
+
+```text
+include_in_memory = true
+memory_status = ready
+会话未被删除
+```
+
+## 错误处理
+
+`updateRoundMemory()` 失败时会抛出 `YewneApiError`：
+
+```ts
+try {
+  await updateRoundMemory(conversationId, true);
+} catch (error) {
+  if (error instanceof YewneApiError) {
+    console.log(error.status, error.body);
   }
-  return session;
 }
 ```
 
----
+| HTTP 状态 | 含义 | 前端处理建议 |
+|---|---|---|
+| `401` | 未登录或 token 已失效 | 引导重新登录 |
+| `403` | 用户尚未同意数据协议 | 回到协议确认流程 |
+| `404` | 会话不存在或不属于当前用户 | 刷新会话列表 |
+| `409` | 会话仍在进行，尚未关闭 | 不允许开启记忆 |
+| `422` | 请求参数格式错误 | 记录错误并检查调用代码 |
 
-## UI 变化
+摘要供应商调用失败不会返回 HTTP 500。接口会正常返回 200，但 `memory_status` 为 `failed`，前端应按业务失败处理。
 
-### 恢复提示
+## 后续聊天
 
-页面加载时若有历史记录，在输入框上方轻提示：
+记忆开启后，原有聊天调用保持不变：
 
+```ts
+await fetchChatDemo({
+  user_text: input,
+  external_user_id: externalUserId,
+  conversation_id: conversationId,
+  persona,
+  history,
+});
 ```
-上次聊到这里 · 2小时前   [重新开始]
+
+前端不要新增 `memory`、`memory_context` 或摘要字段。后端会根据请求中的登录 token 自动读取该用户所有已启用且状态为 `ready` 的记忆。
+
+## 本地联调
+
+本地前端默认使用 `http://127.0.0.1:8000`。后端 CORS 需要允许：
+
+```env
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 ```
 
-点「重新开始」调用 `clearSession()`，重置所有状态。
+联调顺序：
 
-### 其他
+1. 登录并勾选数据协议。
+2. 完成一段对话并结束该轮，使会话状态变为 `closed`。
+3. 调用 `fetchRounds()` 获取 `conversation_id`。
+4. 调用 `updateRoundMemory(conversationId, true)`。
+5. 确认响应为 `include_in_memory: true` 和 `memory_status: ready`。
+6. 开始一段新会话，验证模型能够在相关问题中参考旧会话摘要。
 
-- 历史气泡正常展示（已有），无需额外改动
-- 无需新增设置页或开关，行为默认开启
+## 当前边界
 
----
-
-## 后端影响
-
-**零改动。**
-
-`history` 依然是前端组装好传过去的数组，后端不感知存储层。
-
----
-
-## 实现顺序
-
-1. 新建 `apps/web/lib/session/persistSession.ts`，实现三个函数
-2. `page.tsx` 加载时调用 `loadSession()`，恢复 state
-3. 每轮对话完成后调用 `saveSession()`
-4. 加「重新开始」按钮，调用 `clearSession()`
-5. 加过期提示文字
-
-预计改动量：`persistSession.ts` 约 60 行，`page.tsx` 约 20 行。
-
----
-
-## 和 Mobile 长期记忆的关系
-
-Web localStorage 是单设备、短期的临时方案。  
-Mobile 长期记忆会用数据库 + 用户身份，两套体系独立，不冲突。  
-未来如果 Web 也要跨设备同步，直接把 localStorage 换成 API 调用即可，`persistSession.ts` 的接口不需要变。
+- 记忆只属于登录并同意数据协议的用户，游客不保存也不加载记忆。
+- 用户必须主动选择会话，系统不会默认把所有会话加入记忆。
+- 当前免费用户最多保留 7 个有效会话。
+- 摘要由后端保存到 PostgreSQL，前端 localStorage 只负责当前浏览器会话续接，不是长期记忆来源。
+- 前端页面中的开关位置、文案、加载效果和错误提示不属于本接口文件的职责。
