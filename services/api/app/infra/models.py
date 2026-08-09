@@ -229,3 +229,47 @@ class FeedbackItem(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class UserModeEvent(Base):
+    """每轮判出的回应模式。**只记不用**——先攒分布，等有量了再看。
+
+    见 domain/preference/：这张表是偏好那一层唯一的数据来源。
+
+    ## 为什么不存对话内容
+
+    偏好只需要"这个人通常想要什么形状的回应"，不需要知道他说了什么。
+    三列就够，合规门槛比存内容低一个量级——这个克制是有意的，
+    不要因为"顺便也存一下"就把它变成第二份聊天记录。
+
+    ## 危险类也记，但不参与偏好
+
+    crisis / concern 会写进来（分布本身要看），但
+    `domain/preference/schemas.py` 的 LEANABLE_MODES 把它们排除在统计之外。
+    一个反复陷入危机的人不该被贴标签然后区别对待。
+    """
+
+    __tablename__ = "user_mode_events"
+    __table_args__ = (
+        # 偏好只查"某人最近 N 条"，这个复合索引正好覆盖。
+        Index(
+            "ix_user_mode_events_user_time",
+            "user_id",
+            "occurred_at",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    # 分类器版本——判据一改，旧数据的含义就变了，混在一起统计会得出错的倾向。
+    # 文档 10.4 也要求线上异常能追溯到具体版本。
+    classifier_version: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="", server_default=""
+    )
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
