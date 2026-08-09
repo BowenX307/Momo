@@ -31,8 +31,12 @@ from app.domain.conversation.schemas import (
 )
 from app.domain.conversation.persistence import ConversationPersistence
 from app.domain.reaction.service import detect_reaction
+from app.core.config import settings
 from app.domain.safety import SafetyReason
 from app.domain.safety.provider import SafetyProvider
+from app.domain.safety.rules import SafetyResult, fallback_text_for
+from app.domain.conversation.modes import ResponseMode
+from app.llm.factory import get_response_mode_classifier
 from app.domain.speech.service import _clean_for_tts
 from app.llm.provider import LLMError, LLMProvider, MockProvider
 from app.tts.provider import TTSError, TTSProvider
@@ -103,9 +107,7 @@ async def _synthesize_audio(
 ) -> tuple[str, str, bool]:
     """调用 TTS，返回 (audio_base64, content_type, is_mock)。失败时静默降级返回空音频。"""
     try:
-        result = await tts_provider.synthesize(
-            _clean_for_tts(reply), persona=persona
-        )
+        result = await tts_provider.synthesize(_clean_for_tts(reply), persona=persona)
         audio_b64 = (
             base64.b64encode(result.audio).decode("ascii") if result.audio else ""
         )
@@ -157,6 +159,36 @@ async def _persist_exchange_safe(
         return request.conversation_id
 
 
+async def _classify_mode_safe(user_text: str, request_id: str) -> ResponseMode | None:
+    """判这一轮的回应模式。开关关闭、或分类出任何问题，一律返回 None。
+
+    返回 None 时下游行为和接入前完全一致（人格 prompt 原样，不加块），
+    所以这条链路不会因为分类器故障而变差——最多是没变好。
+    """
+    if not settings.response_mode_enabled:
+        return None
+    try:
+        mode = await get_response_mode_classifier().classify(user_text)
+    except Exception as exc:  # noqa: BLE001 —— 分类是增强，绝不能拖垮主链路
+        logger.warning("mode_classify_failed", request_id=request_id, error=str(exc))
+        return None
+    logger.info("chat_mode_classified", request_id=request_id, mode=mode.value)
+    return mode
+
+
+def _crisis_as_safety_fallback() -> SafetyResult:
+    """v2 判 crisis 时，复用 safety 命中危机那条路——同一份固定文案、不进 LLM。
+
+    这是有意的：明确说出自伤意图的时候，不该让模型现场发挥。
+    concern（情境暗示、没明说）则相反，走 LLM + concern 块，说些安慰的话。
+    """
+    return SafetyResult(
+        decision="fallback",
+        reason="crisis_keyword",
+        fallback_text=fallback_text_for("crisis_keyword"),
+    )
+
+
 async def handle_chat_demo(
     request: ChatDemoRequest,
     safety_provider: SafetyProvider,
@@ -176,6 +208,13 @@ async def handle_chat_demo(
     request_id = uuid4().hex
 
     safety = await safety_provider.check(request.user_text)
+    mode = None
+    if safety.allowed:
+        mode = await _classify_mode_safe(request.user_text, request_id)
+        if mode is ResponseMode.CRISIS:
+            logger.info("chat_mode_crisis_fallback", request_id=request_id)
+            safety = _crisis_as_safety_fallback()
+
     if not safety.allowed:
         logger.info(
             "chat_demo_safety_fallback",
@@ -204,6 +243,7 @@ async def handle_chat_demo(
         return ChatDemoResponse(
             reply=safety.fallback_text,
             safety_flag=safety.reason,
+            mode=mode.value if mode else "",
             is_mock=is_mock,
             request_id=request_id,
             conversation_id=conversation_id,
@@ -220,6 +260,7 @@ async def handle_chat_demo(
                 user_text=request.user_text,
                 history=history,
                 persona=request.persona.value,
+                mode=mode,
             ),
             _detect_emotion_safe(request.user_text, provider),
         )
@@ -258,6 +299,7 @@ async def handle_chat_demo(
         return ChatDemoResponse(
             reply=reply,
             safety_flag="ok",
+            mode=mode.value if mode else "",
             is_mock=is_mock,
             request_id=request_id,
             conversation_id=conversation_id,
@@ -301,6 +343,7 @@ async def handle_chat_demo(
         return ChatDemoResponse(
             reply=mock_reply,
             safety_flag="ok",
+            mode=mode.value if mode else "",
             is_mock=True,
             request_id=request_id,
             conversation_id=conversation_id,
@@ -344,6 +387,13 @@ async def stream_chat_demo(
     request_id = uuid4().hex
 
     safety = await safety_provider.check(request.user_text)
+    mode = None
+    if safety.allowed:
+        mode = await _classify_mode_safe(request.user_text, request_id)
+        if mode is ResponseMode.CRISIS:
+            logger.info("chat_mode_crisis_fallback", request_id=request_id)
+            safety = _crisis_as_safety_fallback()
+
     if not safety.allowed:
         audio_b64, audio_ct, audio_mock = ("", "audio/mpeg", True)
         if tts_provider:

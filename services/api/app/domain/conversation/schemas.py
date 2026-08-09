@@ -107,6 +107,13 @@ class ChatDemoResponse(BaseModel):
         default=False,
         description="true 表示原本走真模型但调用失败已降级到 Mock；前端可以加'临时离线'提示",
     )
+    mode: str = Field(
+        default="",
+        description=(
+            "这一轮判定的回应模式（vent/advice/validate/crisis/concern/unclear）。"
+            "RESPONSE_MODE_ENABLED 关闭时为空串。前端可不用，主要供日志和排查。"
+        ),
+    )
     audio_base64: str = Field(
         default="", description="MP3 base64；空串时前端降级浏览器朗读"
     )
