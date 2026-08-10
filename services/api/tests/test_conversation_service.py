@@ -62,6 +62,7 @@ class _FakePersistence:
         request_id: str,
         is_mock: bool,
         degraded: bool,
+        mode: str = "",
     ) -> UUID:
         self.calls.append(
             {
