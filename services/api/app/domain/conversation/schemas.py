@@ -11,6 +11,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
 
 from app.domain.safety import SafetyReason
+from app.domain.safety.care import CareAffordance
 
 
 class Persona(str, Enum):
@@ -106,6 +107,13 @@ class ChatDemoResponse(BaseModel):
     degraded: bool = Field(
         default=False,
         description="true 表示原本走真模型但调用失败已降级到 Mock；前端可以加'临时离线'提示",
+    )
+    care: CareAffordance = Field(
+        default_factory=CareAffordance,
+        description=(
+            "要不要显示现实求助入口、显示到什么程度。产品文档 8.5.2 要求 S2 以上"
+            "持续显示，且无可用联系人时不伪装成已求助——所以这个字段是底线不是备选。"
+        ),
     )
     mode: str = Field(
         default="",
